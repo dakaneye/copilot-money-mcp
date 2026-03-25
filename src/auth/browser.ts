@@ -1,6 +1,5 @@
 import { createServer, type Server } from 'node:http';
 import { URL } from 'node:url';
-import { randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 
 const COPILOT_APP_URL = 'https://app.copilot.money';
@@ -13,10 +12,10 @@ interface AuthResult {
 
 export async function performBrowserAuth(timeoutMs = 180_000): Promise<AuthResult> {
   return new Promise((resolve, reject) => {
-    const state = randomBytes(16).toString('hex');
     let server: Server | null = null;
     let timeoutId: NodeJS.Timeout | null = null;
     let capturedToken: string | null = null;
+    let settled = false;
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId);
@@ -24,6 +23,13 @@ export async function performBrowserAuth(timeoutMs = 180_000): Promise<AuthResul
         server.close();
         server = null;
       }
+    };
+
+    const complete = (token: string) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({ accessToken: token, refreshToken: null });
     };
 
     server = createServer((req, res) => {
@@ -47,8 +53,7 @@ export async function performBrowserAuth(timeoutMs = 180_000): Promise<AuthResul
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true }));
 
-          cleanup();
-          resolve({ accessToken: token, refreshToken: null });
+          complete(token);
         } else {
           res.writeHead(400);
           res.end('Missing token');
@@ -81,8 +86,7 @@ export async function performBrowserAuth(timeoutMs = 180_000): Promise<AuthResul
       promptForToken()
         .then((token) => {
           if (token && !capturedToken) {
-            cleanup();
-            resolve({ accessToken: token, refreshToken: null });
+            complete(token);
           }
         })
         .catch(() => {
@@ -103,7 +107,11 @@ export async function performBrowserAuth(timeoutMs = 180_000): Promise<AuthResul
 }
 
 function openBrowser(url: string): void {
-  execFile('open', [url], (error) => {
+  const cmd = process.platform === 'darwin' ? 'open' :
+              process.platform === 'win32' ? 'start' :
+              'xdg-open';
+
+  execFile(cmd, [url], (error) => {
     if (error) {
       console.error(`Failed to open browser: ${error.message}`);
       console.error(`Please open this URL manually: ${url}`);
