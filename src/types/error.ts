@@ -16,12 +16,6 @@ export interface McpError {
   details?: Record<string, unknown>;
 }
 
-export interface ToolResult<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: McpError;
-}
-
 export class CopilotMoneyError extends Error {
   constructor(
     public readonly code: ErrorCode,
