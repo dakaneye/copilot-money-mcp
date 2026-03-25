@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { isTokenExpired } from '../../dist/auth/keychain.js';
+import { isTokenExpired } from '../../src/auth/keychain.js';
 
 describe('Keychain', () => {
   it('should detect expired tokens', () => {
