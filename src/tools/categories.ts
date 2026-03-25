@@ -2,16 +2,13 @@ import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
 import { CATEGORIES_QUERY } from '../graphql/queries.js';
 import type { Category } from '../types/index.js';
+import type { CategoriesResponse } from '../types/responses.js';
 
 export const getCategoriesInputSchema = z.object({
   include_spending: z.boolean().optional().describe('Include current spending totals'),
 });
 
 export type GetCategoriesInput = z.infer<typeof getCategoriesInputSchema>;
-
-interface CategoriesResponse {
-  categories: Category[];
-}
 
 export async function getCategories(
   client: GraphQLClient,
