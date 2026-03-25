@@ -1,0 +1,56 @@
+{
+  "transactions": {
+    "edges": [
+      {
+        "cursor": "cursor1",
+        "node": {
+          "id": "txn_001",
+          "itemId": "item_001",
+          "accountId": "acc_001",
+          "name": "UBER TRIP",
+          "amount": -25.50,
+          "date": "2026-03-20",
+          "type": "debit",
+          "categoryId": "cat_transport",
+          "isReviewed": false,
+          "isPending": false,
+          "recurringId": null,
+          "suggestedCategoryIds": ["cat_transport"],
+          "userNotes": null,
+          "tipAmount": null,
+          "createdAt": "2026-03-20T10:00:00Z",
+          "tags": [],
+          "goal": null
+        }
+      },
+      {
+        "cursor": "cursor2",
+        "node": {
+          "id": "txn_002",
+          "itemId": "item_001",
+          "accountId": "acc_001",
+          "name": "WHOLE FOODS",
+          "amount": -85.23,
+          "date": "2026-03-19",
+          "type": "debit",
+          "categoryId": "cat_groceries",
+          "isReviewed": true,
+          "isPending": false,
+          "recurringId": null,
+          "suggestedCategoryIds": [],
+          "userNotes": null,
+          "tipAmount": null,
+          "createdAt": "2026-03-19T15:30:00Z",
+          "tags": [{"id": "tag_001", "name": "essential", "colorName": "blue"}],
+          "goal": null
+        }
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": false,
+      "hasPreviousPage": false,
+      "startCursor": "cursor1",
+      "endCursor": "cursor2"
+    }
+  }
+}
