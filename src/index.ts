@@ -1,23 +1,18 @@
 #!/usr/bin/env node
 
-import { execFile } from 'node:child_process';
-import * as readline from 'node:readline';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { getAuthManager, getStoredTokens, storeTokens, clearTokens } from './auth/index.js';
+import {
+  getAuthManager,
+  getStoredTokens,
+  storeTokens,
+  clearTokens,
+  isPlaywrightAvailable,
+  captureTokenWithPlaywright,
+  captureTokenWithEmailLink,
+} from './auth/index.js';
 import { GraphQLClient } from './graphql/client.js';
 import { registerTools } from './tools/index.js';
-
-function parseJwtExpiry(token: string): number | null {
-  try {
-    const payload = JSON.parse(
-      Buffer.from(token.split('.')[1], 'base64').toString()
-    );
-    return payload.exp ? payload.exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
 
 function formatTimeRemaining(expiresAt: number): string {
   const diff = expiresAt - Date.now();
@@ -35,70 +30,55 @@ function formatTimeRemaining(expiresAt: number): string {
   return `expires in ${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
-function openBrowser(url: string): void {
-  const cmd = process.platform === 'darwin' ? 'open' :
-              process.platform === 'win32' ? 'start' :
-              'xdg-open';
-  execFile(cmd, [url], (error) => {
-    if (error) {
-      console.error(`Please open this URL manually: ${url}`);
-    }
-  });
-}
-
-async function promptForToken(): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question('Token: ', (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
 async function runLogin(): Promise<void> {
-  console.log('\nOpening Copilot Money in your browser...\n');
-  openBrowser('https://app.copilot.money');
+  const noBrowser = process.argv.includes('--no-browser');
 
-  console.log('To get your authentication token:');
-  console.log('1. Log in to Copilot Money in your browser');
-  console.log('2. Open DevTools (Cmd+Option+I) → Network tab');
-  console.log('3. Click any request → Headers → copy "Authorization: Bearer ..." value');
-  console.log('4. Paste the token below (without "Bearer " prefix)\n');
+  if (!noBrowser && await isPlaywrightAvailable()) {
+    console.log('\nLaunching browser for Copilot Money login...');
+    console.log('Log in normally. The token will be captured automatically.\n');
 
-  const token = await promptForToken();
+    try {
+      const result = await captureTokenWithPlaywright();
+      await storeTokens({
+        accessToken: result.token,
+        refreshToken: null,
+        expiresAt: result.expiresAt,
+      });
 
-  if (!token) {
-    console.error('No token provided.');
-    process.exit(1);
+      if (result.expiresAt) {
+        console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}). Token stored in keychain.`);
+      } else {
+        console.log('\nLogin successful. Token stored in keychain.');
+      }
+      return;
+    } catch (error) {
+      console.error(`\nBrowser login failed: ${error instanceof Error ? error.message : error}`);
+      console.log('Falling back to email-link mode...\n');
+    }
   }
 
-  if (token.startsWith('Bearer ')) {
-    console.error('Please paste only the token, without "Bearer " prefix.');
-    process.exit(1);
+  // Fallback: email-link mode
+  if (!await isPlaywrightAvailable() && !noBrowser) {
+    console.log('\nPlaywright not installed. Using email-link mode.');
+    console.log('For automatic browser login, run: npx playwright install chromium\n');
   }
 
-  const expiresAt = parseJwtExpiry(token);
-  if (expiresAt && expiresAt < Date.now()) {
-    console.error('This token is already expired. Please get a fresh token.');
+  try {
+    const result = await captureTokenWithEmailLink();
+    await storeTokens({
+      accessToken: result.token,
+      refreshToken: null,
+      expiresAt: result.expiresAt,
+    });
+
+    if (result.expiresAt) {
+      console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}). Token stored in keychain.`);
+    } else {
+      console.log('\nLogin successful. Token stored in keychain.');
+    }
+  } catch (error) {
+    console.error(`\nLogin failed: ${error instanceof Error ? error.message : error}`);
     process.exit(1);
-  }
-
-  await storeTokens({
-    accessToken: token,
-    refreshToken: null,
-    expiresAt,
-  });
-
-  if (expiresAt) {
-    const remaining = formatTimeRemaining(expiresAt);
-    console.log(`\nToken valid (${remaining}). Stored in keychain.`);
-  } else {
-    console.log('\nToken stored in keychain.');
   }
 }
 
@@ -166,13 +146,16 @@ async function main(): Promise<void> {
     case 'help':
     case '--help':
     case '-h':
-      console.log(`Usage: copilot-money-mcp [command]
+      console.log(`Usage: copilot-money-mcp [command] [options]
 
 Commands:
-  login     Store authentication token
+  login     Authenticate with Copilot Money
   logout    Clear stored token
   status    Check token status
   (none)    Run MCP server
+
+Options:
+  --no-browser    Skip browser automation, use email-link mode
 `);
       break;
     default:
