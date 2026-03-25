@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
 import { TRANSACTIONS_QUERY, CATEGORIES_QUERY } from '../graphql/queries.js';
 import type { Transaction, Category } from '../types/index.js';
+import type { TransactionsResponse, CategoriesResponse } from '../types/responses.js';
 
 export const suggestCategoriesInputSchema = z.object({
   limit: z.number().optional().default(10).describe('Maximum suggestions to return'),
@@ -14,16 +15,6 @@ export interface CategorySuggestion {
   suggestedCategory: string;
   confidence: 'high' | 'medium' | 'low';
   reason: string;
-}
-
-interface TransactionsResponse {
-  transactions: {
-    edges: Array<{ node: Transaction }>;
-  };
-}
-
-interface CategoriesResponse {
-  categories: Category[];
 }
 
 export async function suggestCategories(

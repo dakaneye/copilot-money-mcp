@@ -1,44 +1,5 @@
-// Fragment definitions
-const TAG_FIELDS = `
-fragment TagFields on Tag {
-  colorName
-  name
-  id
-}`;
+import { TRANSACTION_FIELDS } from './fragments.js';
 
-const GOAL_FIELDS = `
-fragment GoalFields on Goal {
-  name
-  icon {
-    ... on EmojiUnicode { unicode }
-  }
-  id
-}`;
-
-const TRANSACTION_FIELDS = `
-${TAG_FIELDS}
-${GOAL_FIELDS}
-fragment TransactionFields on Transaction {
-  suggestedCategoryIds
-  recurringId
-  categoryId
-  isReviewed
-  accountId
-  createdAt
-  isPending
-  tipAmount
-  userNotes
-  itemId
-  amount
-  date
-  name
-  type
-  id
-  tags { ...TagFields }
-  goal { ...GoalFields }
-}`;
-
-// Mutations
 export const EDIT_TRANSACTION_MUTATION = `
 ${TRANSACTION_FIELDS}
 mutation EditTransaction($itemId: ID!, $accountId: ID!, $id: ID!, $input: EditTransactionInput) {

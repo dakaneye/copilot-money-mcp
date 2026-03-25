@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
 import { ACCOUNTS_QUERY } from '../graphql/queries.js';
-import type { Account, AccountType } from '../types/index.js';
+import type { Account } from '../types/index.js';
 
 export const getAccountsInputSchema = z.object({
   type: z.enum(['checking', 'savings', 'credit', 'investment', 'loan', 'other'])

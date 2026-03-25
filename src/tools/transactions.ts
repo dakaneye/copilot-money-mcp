@@ -16,9 +16,7 @@ export const getTransactionsInputSchema = z
     limit: z.number().optional().describe('Maximum transactions to return'),
   });
 
-export type GetTransactionsInput = z.infer<typeof getTransactionsInputSchema> & {
-  limit?: number;
-};
+export type GetTransactionsInput = z.infer<typeof getTransactionsInputSchema>;
 
 interface TransactionsResponse {
   transactions: {

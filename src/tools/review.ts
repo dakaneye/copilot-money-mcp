@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
 import { EDIT_TRANSACTION_MUTATION } from '../graphql/mutations.js';
 import type { Transaction } from '../types/index.js';
+import type { EditTransactionResponse } from '../types/responses.js';
 
 export const reviewTransactionInputSchema = z.object({
   transaction_id: z.string().describe('The transaction ID'),
@@ -15,15 +16,10 @@ export const unreviewTransactionInputSchema = z.object({
 
 export type UnreviewTransactionInput = z.infer<typeof unreviewTransactionInputSchema>;
 
-interface EditTransactionResponse {
-  editTransaction: {
-    transaction: Transaction;
-  };
-}
-
-export async function reviewTransaction(
+async function setReviewStatus(
   client: GraphQLClient,
-  transaction: Transaction
+  transaction: Transaction,
+  isReviewed: boolean
 ): Promise<Transaction> {
   const response = await client.mutate<EditTransactionResponse>(
     'EditTransaction',
@@ -32,31 +28,22 @@ export async function reviewTransaction(
       id: transaction.id,
       itemId: transaction.itemId,
       accountId: transaction.accountId,
-      input: {
-        isReviewed: true,
-      },
+      input: { isReviewed },
     }
   );
-
   return response.editTransaction.transaction;
 }
 
-export async function unreviewTransaction(
+export function reviewTransaction(
   client: GraphQLClient,
   transaction: Transaction
 ): Promise<Transaction> {
-  const response = await client.mutate<EditTransactionResponse>(
-    'EditTransaction',
-    EDIT_TRANSACTION_MUTATION,
-    {
-      id: transaction.id,
-      itemId: transaction.itemId,
-      accountId: transaction.accountId,
-      input: {
-        isReviewed: false,
-      },
-    }
-  );
+  return setReviewStatus(client, transaction, true);
+}
 
-  return response.editTransaction.transaction;
+export function unreviewTransaction(
+  client: GraphQLClient,
+  transaction: Transaction
+): Promise<Transaction> {
+  return setReviewStatus(client, transaction, false);
 }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
 import { EDIT_TRANSACTION_MUTATION } from '../graphql/mutations.js';
 import type { Transaction } from '../types/index.js';
+import type { EditTransactionResponse } from '../types/responses.js';
 import { CopilotMoneyError } from '../types/error.js';
 
 export const tagTransactionInputSchema = z.object({
@@ -17,12 +18,6 @@ export const untagTransactionInputSchema = z.object({
 });
 
 export type UntagTransactionInput = z.infer<typeof untagTransactionInputSchema>;
-
-interface EditTransactionResponse {
-  editTransaction: {
-    transaction: Transaction;
-  };
-}
 
 export async function tagTransaction(
   client: GraphQLClient,

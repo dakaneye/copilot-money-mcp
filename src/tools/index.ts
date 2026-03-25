@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { GraphQLClient } from '../graphql/client.js';
 import type { Category, Tag, Transaction } from '../types/index.js';
+import type { TransactionsResponse } from '../types/responses.js';
 import { CopilotMoneyError } from '../types/error.js';
 import { TRANSACTIONS_QUERY } from '../graphql/queries.js';
 
@@ -23,11 +24,7 @@ import {
 } from './categories.js';
 import { getTags, getTagsInputSchema, buildTagMap } from './tags.js';
 import { getRecurring, getRecurringInputSchema } from './recurring.js';
-import {
-  getBudgets,
-  getBudgetsInputSchema,
-  type GetBudgetsInput,
-} from './budgets.js';
+import { getBudgets, getBudgetsInputSchema } from './budgets.js';
 
 // Write tools
 import {
@@ -72,50 +69,60 @@ import {
   type SuggestCategoriesInput,
 } from './suggest.js';
 
-// Cache for categories and tags
-let cachedCategories: Category[] | null = null;
-let cachedTags: Tag[] | null = null;
+// Cache with TTL
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface Cache<T> {
+  data: T | null;
+  expiresAt: number;
+}
+
+let categoryCache: Cache<Category[]> = { data: null, expiresAt: 0 };
+let tagCache: Cache<Tag[]> = { data: null, expiresAt: 0 };
 let categoryMap: Map<string, string> = new Map();
 let tagMap: Map<string, string> = new Map();
 
+function isCacheValid<T>(cache: Cache<T>): cache is Cache<T> & { data: T } {
+  return cache.data !== null && Date.now() < cache.expiresAt;
+}
+
 async function refreshCategoryCache(client: GraphQLClient): Promise<void> {
-  cachedCategories = await getCategories(client, {});
-  categoryMap = buildCategoryMap(cachedCategories);
+  categoryCache.data = await getCategories(client, {});
+  categoryCache.expiresAt = Date.now() + CACHE_TTL_MS;
+  categoryMap = buildCategoryMap(categoryCache.data);
 }
 
 async function refreshTagCache(client: GraphQLClient): Promise<void> {
-  cachedTags = await getTags(client);
-  tagMap = buildTagMap(cachedTags);
+  tagCache.data = await getTags(client);
+  tagCache.expiresAt = Date.now() + CACHE_TTL_MS;
+  tagMap = buildTagMap(tagCache.data);
 }
 
 async function ensureCaches(client: GraphQLClient): Promise<void> {
-  if (!cachedCategories) {
-    await refreshCategoryCache(client);
+  const refreshes: Promise<void>[] = [];
+  if (!isCacheValid(categoryCache)) {
+    refreshes.push(refreshCategoryCache(client));
   }
-  if (!cachedTags) {
-    await refreshTagCache(client);
+  if (!isCacheValid(tagCache)) {
+    refreshes.push(refreshTagCache(client));
+  }
+  if (refreshes.length > 0) {
+    await Promise.all(refreshes);
   }
 }
 
 function getCategoryNames(): string[] {
-  return cachedCategories?.map((c) => c.name) ?? [];
+  return categoryCache.data?.map((c) => c.name) ?? [];
 }
 
 function getTagNames(): string[] {
-  return cachedTags?.map((t) => t.name) ?? [];
-}
-
-interface TransactionsResponse {
-  transactions: {
-    edges: Array<{ node: Transaction }>;
-  };
+  return tagCache.data?.map((t) => t.name) ?? [];
 }
 
 async function findTransaction(
   client: GraphQLClient,
   transactionId: string
 ): Promise<Transaction> {
-  // Fetch recent transactions and search for the ID
   const response = await client.query<TransactionsResponse>(
     'Transactions',
     TRANSACTIONS_QUERY,
@@ -133,7 +140,7 @@ async function findTransaction(
   if (!txn) {
     throw new CopilotMoneyError(
       'TRANSACTION_NOT_FOUND',
-      `Transaction ${transactionId} not found in recent transactions`
+      `Transaction ${transactionId} not found. Only the 100 most recent transactions are searchable.`
     );
   }
 
@@ -171,9 +178,7 @@ function formatError(
 }
 
 export function registerTools(server: McpServer, client: GraphQLClient): void {
-  // ============================================
   // READ TOOLS
-  // ============================================
 
   server.tool(
     'get_transactions',
@@ -206,13 +211,12 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
 
   server.tool(
     'get_categories',
-    'Get all spending categories with optional spending totals for a given period',
+    'Get all spending categories with optional spending totals',
     getCategoriesInputSchema.shape,
     async (args: GetCategoriesInput) => {
       try {
         const result = await getCategories(client, args);
-        // Update cache
-        cachedCategories = result;
+        categoryCache = { data: result, expiresAt: Date.now() + CACHE_TTL_MS };
         categoryMap = buildCategoryMap(result);
         return formatResult(result);
       } catch (error) {
@@ -228,8 +232,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     async () => {
       try {
         const result = await getTags(client);
-        // Update cache
-        cachedTags = result;
+        tagCache = { data: result, expiresAt: Date.now() + CACHE_TTL_MS };
         tagMap = buildTagMap(result);
         return formatResult(result);
       } catch (error) {
@@ -256,9 +259,9 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     'get_budgets',
     'Get budget information including limits and spending by category',
     getBudgetsInputSchema.shape,
-    async (args: GetBudgetsInput) => {
+    async () => {
       try {
-        const result = await getBudgets(client, args);
+        const result = await getBudgets(client);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -266,9 +269,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     }
   );
 
-  // ============================================
   // WRITE TOOLS
-  // ============================================
 
   server.tool(
     'categorize_transaction',
@@ -360,9 +361,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     }
   );
 
-  // ============================================
   // BULK TOOLS
-  // ============================================
 
   server.tool(
     'bulk_categorize',
@@ -413,9 +412,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     }
   );
 
-  // ============================================
   // SMART TOOLS
-  // ============================================
 
   server.tool(
     'suggest_categories',
@@ -431,6 +428,3 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     }
   );
 }
-
-// Export cache management for potential external use
-export { refreshCategoryCache, refreshTagCache, ensureCaches };

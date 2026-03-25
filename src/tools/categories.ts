@@ -4,10 +4,7 @@ import { CATEGORIES_QUERY } from '../graphql/queries.js';
 import type { Category } from '../types/index.js';
 
 export const getCategoriesInputSchema = z.object({
-  period: z.enum([
-    'this_month', 'last_month', 'last_7_days', 'last_30_days',
-    'last_90_days', 'ytd', 'this_year', 'last_year'
-  ]).optional().describe('Period for spending totals'),
+  include_spending: z.boolean().optional().describe('Include current spending totals'),
 });
 
 export type GetCategoriesInput = z.infer<typeof getCategoriesInputSchema>;
@@ -20,13 +17,11 @@ export async function getCategories(
   client: GraphQLClient,
   input: GetCategoriesInput
 ): Promise<Category[]> {
-  const includeSpend = !!input.period;
-
   const response = await client.query<CategoriesResponse>(
     'Categories',
     CATEGORIES_QUERY,
     {
-      spend: includeSpend,
+      spend: input.include_spending ?? false,
       budget: false,
       rollovers: false,
     }

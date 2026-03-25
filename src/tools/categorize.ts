@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
 import { EDIT_TRANSACTION_MUTATION } from '../graphql/mutations.js';
 import type { Transaction } from '../types/index.js';
+import type { EditTransactionResponse } from '../types/responses.js';
 import { CopilotMoneyError } from '../types/error.js';
 
 export const categorizeTransactionInputSchema = z.object({
@@ -10,12 +11,6 @@ export const categorizeTransactionInputSchema = z.object({
 });
 
 export type CategorizeTransactionInput = z.infer<typeof categorizeTransactionInputSchema>;
-
-interface EditTransactionResponse {
-  editTransaction: {
-    transaction: Transaction;
-  };
-}
 
 export async function categorizeTransaction(
   client: GraphQLClient,

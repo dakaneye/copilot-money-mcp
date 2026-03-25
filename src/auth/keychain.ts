@@ -12,13 +12,16 @@ export interface StoredTokens {
 }
 
 export async function getStoredTokens(): Promise<StoredTokens | null> {
-  const accessToken = await keytar.getPassword(SERVICE_NAME, ACCOUNT_ACCESS);
+  const [accessToken, refreshToken, expiresAtStr] = await Promise.all([
+    keytar.getPassword(SERVICE_NAME, ACCOUNT_ACCESS),
+    keytar.getPassword(SERVICE_NAME, ACCOUNT_REFRESH),
+    keytar.getPassword(SERVICE_NAME, ACCOUNT_EXPIRES),
+  ]);
+
   if (!accessToken) {
     return null;
   }
 
-  const refreshToken = await keytar.getPassword(SERVICE_NAME, ACCOUNT_REFRESH);
-  const expiresAtStr = await keytar.getPassword(SERVICE_NAME, ACCOUNT_EXPIRES);
   let expiresAt: number | null = null;
   if (expiresAtStr) {
     const parsed = parseInt(expiresAtStr, 10);
@@ -26,6 +29,17 @@ export async function getStoredTokens(): Promise<StoredTokens | null> {
   }
 
   return { accessToken, refreshToken, expiresAt };
+}
+
+async function safeDeletePassword(account: string): Promise<void> {
+  try {
+    await keytar.deletePassword(SERVICE_NAME, account);
+  } catch (error) {
+    // Ignore "not found" errors, log unexpected ones
+    if (error instanceof Error && !error.message.includes('not found')) {
+      console.error(`Failed to delete ${account}:`, error.message);
+    }
+  }
 }
 
 export async function storeTokens(tokens: StoredTokens): Promise<void> {
@@ -38,59 +52,22 @@ export async function storeTokens(tokens: StoredTokens): Promise<void> {
   if (tokens.refreshToken) {
     await keytar.setPassword(SERVICE_NAME, ACCOUNT_REFRESH, tokens.refreshToken);
   } else {
-    // Clear refresh token if not provided
-    try {
-      await keytar.deletePassword(SERVICE_NAME, ACCOUNT_REFRESH);
-    } catch (error) {
-      // Ignore if key doesn't exist, but log unexpected errors
-      if (error instanceof Error && !error.message.includes('not found')) {
-        console.error('Failed to delete refresh token:', error);
-      }
-    }
+    await safeDeletePassword(ACCOUNT_REFRESH);
   }
 
   if (tokens.expiresAt) {
     await keytar.setPassword(SERVICE_NAME, ACCOUNT_EXPIRES, tokens.expiresAt.toString());
   } else {
-    // Clear expiration if not provided
-    try {
-      await keytar.deletePassword(SERVICE_NAME, ACCOUNT_EXPIRES);
-    } catch (error) {
-      // Ignore if key doesn't exist, but log unexpected errors
-      if (error instanceof Error && !error.message.includes('not found')) {
-        console.error('Failed to delete expiration time:', error);
-      }
-    }
+    await safeDeletePassword(ACCOUNT_EXPIRES);
   }
 }
 
 export async function clearTokens(): Promise<void> {
-  try {
-    await keytar.deletePassword(SERVICE_NAME, ACCOUNT_ACCESS);
-  } catch (error) {
-    // Ignore if key doesn't exist, but log unexpected errors
-    if (error instanceof Error && !error.message.includes('not found')) {
-      console.error('Failed to delete access token:', error);
-    }
-  }
-
-  try {
-    await keytar.deletePassword(SERVICE_NAME, ACCOUNT_REFRESH);
-  } catch (error) {
-    // Ignore if key doesn't exist, but log unexpected errors
-    if (error instanceof Error && !error.message.includes('not found')) {
-      console.error('Failed to delete refresh token:', error);
-    }
-  }
-
-  try {
-    await keytar.deletePassword(SERVICE_NAME, ACCOUNT_EXPIRES);
-  } catch (error) {
-    // Ignore if key doesn't exist, but log unexpected errors
-    if (error instanceof Error && !error.message.includes('not found')) {
-      console.error('Failed to delete expiration time:', error);
-    }
-  }
+  await Promise.all([
+    safeDeletePassword(ACCOUNT_ACCESS),
+    safeDeletePassword(ACCOUNT_REFRESH),
+    safeDeletePassword(ACCOUNT_EXPIRES),
+  ]);
 }
 
 export function isTokenExpired(expiresAt: number | null): boolean {
@@ -98,6 +75,6 @@ export function isTokenExpired(expiresAt: number | null): boolean {
     return false;
   }
   // Consider expired if within 5 minutes of expiry
-  const EXPIRY_BUFFER = 5 * 60 * 1000; // 5 minutes in milliseconds
+  const EXPIRY_BUFFER = 5 * 60 * 1000;
   return Date.now() > expiresAt - EXPIRY_BUFFER;
 }

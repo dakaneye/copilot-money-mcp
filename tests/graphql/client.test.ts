@@ -222,12 +222,8 @@ describe('GraphQLClient', () => {
 
   describe('auth error retry', () => {
     it('should retry with onAuthError callback on 401', async () => {
-      let callCount = 0;
       let tokenCallCount = 0;
-      const onAuthError = mock.fn(() => {
-        callCount++;
-        return Promise.resolve('new-token');
-      });
+      const onAuthError = mock.fn(() => Promise.resolve('new-token'));
 
       const getToken = mock.fn(() => {
         tokenCallCount++;
@@ -253,11 +249,7 @@ describe('GraphQLClient', () => {
     });
 
     it('should retry with onAuthError callback on unauthenticated error', async () => {
-      let callCount = 0;
-      const onAuthError = mock.fn(() => {
-        callCount++;
-        return Promise.resolve('new-token');
-      });
+      const onAuthError = mock.fn(() => Promise.resolve('new-token'));
 
       const client = new GraphQLClient(() => Promise.resolve('fake-token'), onAuthError);
 

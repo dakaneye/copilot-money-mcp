@@ -1,4 +1,4 @@
-import { getStoredTokens, storeTokens, clearTokens, isTokenExpired } from './keychain.js';
+import { getStoredTokens, clearTokens, isTokenExpired } from './keychain.js';
 import { CopilotMoneyError } from '../types/error.js';
 
 export class AuthManager {
