@@ -19,12 +19,20 @@ export async function getStoredTokens(): Promise<StoredTokens | null> {
 
   const refreshToken = await keytar.getPassword(SERVICE_NAME, ACCOUNT_REFRESH);
   const expiresAtStr = await keytar.getPassword(SERVICE_NAME, ACCOUNT_EXPIRES);
-  const expiresAt = expiresAtStr ? parseInt(expiresAtStr, 10) : null;
+  let expiresAt: number | null = null;
+  if (expiresAtStr) {
+    const parsed = parseInt(expiresAtStr, 10);
+    expiresAt = Number.isNaN(parsed) ? null : parsed;
+  }
 
   return { accessToken, refreshToken, expiresAt };
 }
 
 export async function storeTokens(tokens: StoredTokens): Promise<void> {
+  if (!tokens.accessToken || tokens.accessToken.trim() === '') {
+    throw new Error('accessToken cannot be empty');
+  }
+
   await keytar.setPassword(SERVICE_NAME, ACCOUNT_ACCESS, tokens.accessToken);
 
   if (tokens.refreshToken) {
@@ -33,8 +41,11 @@ export async function storeTokens(tokens: StoredTokens): Promise<void> {
     // Clear refresh token if not provided
     try {
       await keytar.deletePassword(SERVICE_NAME, ACCOUNT_REFRESH);
-    } catch {
-      // Ignore if key doesn't exist
+    } catch (error) {
+      // Ignore if key doesn't exist, but log unexpected errors
+      if (error instanceof Error && !error.message.includes('not found')) {
+        console.error('Failed to delete refresh token:', error);
+      }
     }
   }
 
@@ -44,8 +55,11 @@ export async function storeTokens(tokens: StoredTokens): Promise<void> {
     // Clear expiration if not provided
     try {
       await keytar.deletePassword(SERVICE_NAME, ACCOUNT_EXPIRES);
-    } catch {
-      // Ignore if key doesn't exist
+    } catch (error) {
+      // Ignore if key doesn't exist, but log unexpected errors
+      if (error instanceof Error && !error.message.includes('not found')) {
+        console.error('Failed to delete expiration time:', error);
+      }
     }
   }
 }
@@ -53,20 +67,29 @@ export async function storeTokens(tokens: StoredTokens): Promise<void> {
 export async function clearTokens(): Promise<void> {
   try {
     await keytar.deletePassword(SERVICE_NAME, ACCOUNT_ACCESS);
-  } catch {
-    // Ignore if key doesn't exist
+  } catch (error) {
+    // Ignore if key doesn't exist, but log unexpected errors
+    if (error instanceof Error && !error.message.includes('not found')) {
+      console.error('Failed to delete access token:', error);
+    }
   }
 
   try {
     await keytar.deletePassword(SERVICE_NAME, ACCOUNT_REFRESH);
-  } catch {
-    // Ignore if key doesn't exist
+  } catch (error) {
+    // Ignore if key doesn't exist, but log unexpected errors
+    if (error instanceof Error && !error.message.includes('not found')) {
+      console.error('Failed to delete refresh token:', error);
+    }
   }
 
   try {
     await keytar.deletePassword(SERVICE_NAME, ACCOUNT_EXPIRES);
-  } catch {
-    // Ignore if key doesn't exist
+  } catch (error) {
+    // Ignore if key doesn't exist, but log unexpected errors
+    if (error instanceof Error && !error.message.includes('not found')) {
+      console.error('Failed to delete expiration time:', error);
+    }
   }
 }
 
