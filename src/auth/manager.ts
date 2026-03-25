@@ -22,6 +22,7 @@ export class AuthManager {
     throw new CopilotMoneyError(
       'NOT_AUTHENTICATED',
       'Not authenticated. Please run authentication flow.',
+      ['Call ensureAuthenticated() to start the authentication flow'],
     );
   }
 
@@ -30,11 +31,19 @@ export class AuthManager {
 
     const result = await performBrowserAuth();
 
-    await storeTokens({
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
-      expiresAt: null, // Copilot Money doesn't expose expiry; we'll detect on 401
-    });
+    try {
+      await storeTokens({
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        expiresAt: null, // Copilot Money doesn't expose expiry; we'll detect on 401
+      });
+    } catch (error) {
+      throw new CopilotMoneyError(
+        'NETWORK_ERROR',
+        `Failed to store authentication tokens: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        ['Ensure system keychain is accessible and unlocked'],
+      );
+    }
 
     this.cachedToken = result.accessToken;
     console.error('Authentication successful!');
@@ -68,6 +77,8 @@ export class AuthManager {
 }
 
 // Singleton instance
+// Lazily initialized on first access to ensure consistent token cache and keychain state
+// across the application lifetime.
 let authManagerInstance: AuthManager | null = null;
 
 export function getAuthManager(): AuthManager {
