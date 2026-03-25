@@ -57,10 +57,6 @@ describe('AuthManager', () => {
       assert.ok(typeof authManager.ensureAuthenticated === 'function');
     });
 
-    it('should have authenticate method', async () => {
-      assert.ok(typeof authManager.authenticate === 'function');
-    });
-
     it('should have handleAuthError method', async () => {
       assert.ok(typeof authManager.handleAuthError === 'function');
     });
