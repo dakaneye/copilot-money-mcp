@@ -2,11 +2,23 @@ import * as readline from 'node:readline';
 import { initializeApp, deleteApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 
-const FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyAYnMKo4GNJs8Rl2F--c4VCb5LKrOAzxng',
-  authDomain: 'copilot-production-22904.firebaseapp.com',
-  projectId: 'copilot-production-22904',
-};
+function getFirebaseConfig() {
+  const apiKey = process.env.COPILOT_FIREBASE_API_KEY;
+  const projectId = process.env.COPILOT_FIREBASE_PROJECT_ID;
+
+  if (!apiKey || !projectId) {
+    throw new Error(
+      'Firebase configuration required. Set COPILOT_FIREBASE_API_KEY and COPILOT_FIREBASE_PROJECT_ID environment variables.\n' +
+      'See README for details on obtaining these values.'
+    );
+  }
+
+  return {
+    apiKey,
+    authDomain: `${projectId}.firebaseapp.com`,
+    projectId,
+  };
+}
 
 export interface EmailLinkAuthResult {
   token: string;
@@ -44,7 +56,7 @@ export async function captureTokenWithEmailLink(): Promise<EmailLinkAuthResult> 
 
   let app: FirebaseApp | null = null;
   try {
-    app = initializeApp(FIREBASE_CONFIG, 'copilot-money-mcp-auth');
+    app = initializeApp(getFirebaseConfig(), 'copilot-money-mcp-auth');
     const auth = getAuth(app);
 
     if (!isSignInWithEmailLink(auth, magicLink)) {

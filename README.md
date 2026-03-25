@@ -1,17 +1,31 @@
-# Copilot Money MCP Server
+# copilot-money-mcp
 
-An MCP (Model Context Protocol) server that enables AI assistants to read and write data in Copilot Money.
+MCP server for [Copilot Money](https://copilot.money) personal finance app.
+
+> **Disclaimer**: This is an unofficial integration using Copilot Money's undocumented API. Use at your own risk. Not affiliated with Copilot Money.
 
 ## Features
 
-- **Read operations**: Query transactions, accounts, categories, recurring payments, budgets, and tags
-- **Write operations**: Categorize, tag, and review transactions
-- **Bulk operations**: Batch categorize, tag, and review multiple transactions
-- **Smart suggestions**: AI-powered category suggestions for uncategorized transactions
+- Query transactions with filters (date, category, merchant, amount)
+- View accounts, categories, tags, and budgets
+- Categorize and tag transactions
+- Mark transactions as reviewed
+- Bulk operations for efficient workflows
+- Category suggestions based on merchant patterns
+
+## Prerequisites
+
+- Node.js 20+
+- A [Copilot Money](https://copilot.money) account
+- Firebase configuration (see Setup)
 
 ## Installation
 
-Clone and build locally:
+```bash
+npm install -g copilot-money-mcp
+```
+
+Or clone and build:
 
 ```bash
 git clone https://github.com/dakaneye/copilot-money-mcp.git
@@ -20,65 +34,88 @@ npm install
 npm run build
 ```
 
-## Configuration
+## Setup
 
-### Claude Desktop
+### 1. Get Firebase Configuration
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+This server authenticates through Copilot Money's Firebase backend. Extract the config from the web app:
+
+1. Open https://app.copilot.money in your browser
+2. Open Developer Tools (F12) → Network tab
+3. Look for requests to `firebaseapp.com` or find the config in the page source
+4. Note the `apiKey` and `projectId` values
+
+### 2. Set Environment Variables
+
+```bash
+export COPILOT_FIREBASE_API_KEY="your-api-key"
+export COPILOT_FIREBASE_PROJECT_ID="your-project-id"
+```
+
+### 3. Authenticate
+
+```bash
+# Browser-based login (recommended)
+npx playwright install chromium
+copilot-money-mcp login
+
+# Or email-link mode (no browser required)
+copilot-money-mcp login --no-browser
+```
+
+Tokens are stored securely in macOS Keychain.
+
+### 4. Configure Your MCP Client
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "copilot-money": {
       "command": "node",
-      "args": ["/path/to/copilot-money-mcp/dist/index.js"]
+      "args": ["/path/to/copilot-money-mcp/dist/index.js"],
+      "env": {
+        "COPILOT_FIREBASE_API_KEY": "your-api-key",
+        "COPILOT_FIREBASE_PROJECT_ID": "your-project-id"
+      }
     }
   }
 }
 ```
 
-### Cursor
+## CLI Commands
 
-Add to MCP settings in Cursor preferences.
-
-## Authentication
-
-On first use, the server will:
-1. Open your browser to Copilot Money login
-2. After authentication, capture the token automatically
-3. Store the token securely in macOS Keychain
+| Command | Description |
+|---------|-------------|
+| `copilot-money-mcp` | Run MCP server |
+| `copilot-money-mcp login` | Authenticate (browser) |
+| `copilot-money-mcp login --no-browser` | Authenticate (email link) |
+| `copilot-money-mcp logout` | Clear stored token |
+| `copilot-money-mcp status` | Check auth status |
 
 ## Available Tools
 
-### Read Tools
-- `get_transactions` - List/search transactions with filters
-- `get_accounts` - List all accounts
-- `get_categories` - List spending categories
-- `get_tags` - List all tags
-- `get_recurring` - List recurring transactions/subscriptions
-- `get_budgets` - Get budget information
+### Read
+- `get_transactions` - Query with filters (date, category, merchant, amount)
+- `get_accounts` - List accounts with balances
+- `get_categories` - Categories with spending totals
+- `get_tags` - User-defined tags
+- `get_recurring` - Recurring transactions
+- `get_budgets` - Budget limits and spending
 
-### Write Tools
-- `categorize_transaction` - Set category for a transaction
-- `tag_transaction` - Add tags to a transaction
-- `untag_transaction` - Remove tags from a transaction
-- `review_transaction` - Mark as reviewed
-- `unreview_transaction` - Mark as not reviewed
+### Write
+- `categorize_transaction` - Assign category
+- `review_transaction` / `unreview_transaction` - Mark reviewed status
+- `tag_transaction` / `untag_transaction` - Manage tags
 
-### Bulk Tools
+### Bulk
 - `bulk_categorize` - Categorize multiple transactions
 - `bulk_tag` - Tag multiple transactions
 - `bulk_review` - Review multiple transactions
 
-### Smart Tools
-- `suggest_categories` - Get AI-powered category suggestions
-
-## Development
-
-```bash
-npm run build    # Build
-npm run test     # Run tests
-```
+### Suggestions
+- `suggest_categories` - Category suggestions for uncategorized transactions
 
 ## License
 
