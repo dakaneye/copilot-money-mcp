@@ -158,58 +158,54 @@ export async function bulkTag(
   };
 }
 
+// Process items in parallel with concurrency limit
+async function parallelLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  let index = 0;
+
+  async function worker(): Promise<void> {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 export async function bulkReview(
   client: GraphQLClient,
-  input: BulkReviewInput,
+  _input: BulkReviewInput,
   transactions: Transaction[]
 ): Promise<BulkResult> {
-  const transactionRefs = buildTransactionRefs(transactions);
+  // Skip unreliable bulk endpoint - use parallel individual reviews
+  // Copilot Money's bulk endpoint silently fails for transactions older than ~5 days
+  const CONCURRENCY = 5;
 
-  try {
-    // Try bulk first
-    const response = await client.mutate<BulkEditResponse>(
-      'BulkEditTransactions',
-      BULK_EDIT_TRANSACTIONS_MUTATION,
-      {
-        filter: {
-          ids: transactionRefs,
-        },
-        input: {
-          isReviewed: true,
-        },
-      }
-    );
+  const updatedIds: string[] = [];
+  const failed: Array<{ transactionId: string; error: string }> = [];
 
-    return {
-      updatedCount: response.bulkEditTransactions.updated.length,
-      updatedIds: response.bulkEditTransactions.updated.map((t) => t.id),
-      failed: response.bulkEditTransactions.failed.map((f) => ({
-        transactionId: f.transaction.id,
-        error: f.error,
-      })),
-    };
-  } catch {
-    // Bulk failed - fall back to individual reviews
-    const updatedIds: string[] = [];
-    const failed: Array<{ transactionId: string; error: string }> = [];
-
-    // Process sequentially to avoid rate limiting
-    for (const txn of transactions) {
-      try {
-        await reviewTransaction(client, txn);
-        updatedIds.push(txn.id);
-      } catch (error) {
-        failed.push({
-          transactionId: txn.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+  await parallelLimit(transactions, CONCURRENCY, async (txn) => {
+    try {
+      await reviewTransaction(client, txn);
+      updatedIds.push(txn.id);
+    } catch (error) {
+      failed.push({
+        transactionId: txn.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
+  });
 
-    return {
-      updatedCount: updatedIds.length,
-      updatedIds,
-      failed,
-    };
-  }
+  return {
+    updatedCount: updatedIds.length,
+    updatedIds,
+    failed,
+  };
 }
