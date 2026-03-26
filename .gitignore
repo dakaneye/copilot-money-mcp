@@ -12,3 +12,7 @@ tests/**/*.d.ts.map
 
 # Internal planning docs
 docs/superpowers/
+
+# Claude-specific
+.claude/
+scripts/

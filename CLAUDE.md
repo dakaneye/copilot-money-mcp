@@ -47,7 +47,6 @@ If you commit without completing step 7, you have failed. Run the review. Get th
 
 ## Architecture Notes
 
-- Bulk operations fall back to individual mutations when the bulk endpoint rejects older transactions (Copilot Money API limitation)
 - Transaction lookups are limited to the 200 most recent transactions
 - Categories and tags are cached for 5 minutes to reduce API calls
 - Auth tokens are stored securely in the system keychain via keytar
@@ -55,5 +54,4 @@ If you commit without completing step 7, you have failed. Run the review. Get th
 ## Known Limitations
 
 - Copilot Money has no official public API; this uses the same GraphQL endpoint as their web app
-- Bulk edit endpoint only works for transactions within ~5 days; older ones require individual mutations
 - Token expiry requires manual re-login via `copilot-money-mcp login`
