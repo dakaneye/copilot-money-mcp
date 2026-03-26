@@ -11,11 +11,7 @@ MCP server for [Copilot Money](https://copilot.money).
 ## Install
 
 ```bash
-git clone https://github.com/dakaneye/copilot-money-mcp.git
-cd copilot-money-mcp
-npm install
-npm run build
-npm link
+npm install -g @dakaneye-js/copilot-money-mcp
 
 # Login (opens browser, captures token)
 npx playwright install chromium
