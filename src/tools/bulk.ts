@@ -3,7 +3,6 @@ import type { GraphQLClient } from '../graphql/client.js';
 import { BULK_EDIT_TRANSACTIONS_MUTATION } from '../graphql/mutations.js';
 import { CopilotMoneyError } from '../types/error.js';
 import type { Transaction } from '../types/index.js';
-import { reviewTransaction } from './review.js';
 
 interface BulkTransaction {
   id: string;
@@ -158,54 +157,33 @@ export async function bulkTag(
   };
 }
 
-// Process items in parallel with concurrency limit
-async function parallelLimit<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = [];
-  let index = 0;
-
-  async function worker(): Promise<void> {
-    while (index < items.length) {
-      const i = index++;
-      results[i] = await fn(items[i]);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
 export async function bulkReview(
   client: GraphQLClient,
   _input: BulkReviewInput,
   transactions: Transaction[]
 ): Promise<BulkResult> {
-  // Skip unreliable bulk endpoint - use parallel individual reviews
-  // Copilot Money's bulk endpoint silently fails for transactions older than ~5 days
-  const CONCURRENCY = 5;
+  // Use bulk endpoint like JaviSoto/copilot-money-cli does
+  const transactionRefs = buildTransactionRefs(transactions);
 
-  const updatedIds: string[] = [];
-  const failed: Array<{ transactionId: string; error: string }> = [];
-
-  await parallelLimit(transactions, CONCURRENCY, async (txn) => {
-    try {
-      await reviewTransaction(client, txn);
-      updatedIds.push(txn.id);
-    } catch (error) {
-      failed.push({
-        transactionId: txn.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+  const response = await client.mutate<BulkEditResponse>(
+    'BulkEditTransactions',
+    BULK_EDIT_TRANSACTIONS_MUTATION,
+    {
+      filter: {
+        ids: transactionRefs,
+      },
+      input: {
+        isReviewed: true,
+      },
     }
-  });
+  );
 
   return {
-    updatedCount: updatedIds.length,
-    updatedIds,
-    failed,
+    updatedCount: response.bulkEditTransactions.updated.length,
+    updatedIds: response.bulkEditTransactions.updated.map((t) => t.id),
+    failed: response.bulkEditTransactions.failed.map((f) => ({
+      transactionId: f.transaction.id,
+      error: f.error,
+    })),
   };
 }

@@ -46,23 +46,22 @@ describe('bulkReview', () => {
     mock.reset();
   });
 
-  it('should review all transactions in parallel', async () => {
-    let callCount = 0;
-    globalThis.fetch = mock.fn(() => {
-      callCount++;
-      return Promise.resolve(
+  it('should review all transactions via bulk endpoint', async () => {
+    globalThis.fetch = mock.fn(() =>
+      Promise.resolve(
         new Response(
           JSON.stringify({
             data: {
-              editTransaction: {
-                transaction: { id: `txn_00${callCount}`, isReviewed: true },
+              bulkEditTransactions: {
+                updated: [{ id: 'txn_001' }, { id: 'txn_002' }, { id: 'txn_003' }],
+                failed: [],
               },
             },
           }),
           { status: 200 }
         )
-      );
-    }) as typeof fetch;
+      )
+    ) as typeof fetch;
 
     const input: BulkReviewInput = { transaction_ids: ['txn_001', 'txn_002', 'txn_003'] };
     const transactions = [
@@ -74,33 +73,32 @@ describe('bulkReview', () => {
     const result = await bulkReview(mockClient, input, transactions);
 
     assert.strictEqual(result.updatedCount, 3);
-    assert.strictEqual(result.updatedIds.length, 3);
+    assert.deepStrictEqual(result.updatedIds, ['txn_001', 'txn_002', 'txn_003']);
     assert.strictEqual(result.failed.length, 0);
-    // Each transaction gets its own API call
-    assert.strictEqual(callCount, 3);
   });
 
-  it('should report failures for individual transactions', async () => {
-    let callCount = 0;
-    globalThis.fetch = mock.fn(() => {
-      callCount++;
-      // Second call fails
-      if (callCount === 2) {
-        return Promise.resolve(new Response('Server error', { status: 500 }));
-      }
-      return Promise.resolve(
+  it('should report failures from bulk endpoint', async () => {
+    globalThis.fetch = mock.fn(() =>
+      Promise.resolve(
         new Response(
           JSON.stringify({
             data: {
-              editTransaction: {
-                transaction: { id: `txn_00${callCount}`, isReviewed: true },
+              bulkEditTransactions: {
+                updated: [{ id: 'txn_001' }, { id: 'txn_003' }],
+                failed: [
+                  {
+                    transaction: { id: 'txn_002' },
+                    error: 'Transaction too old',
+                    errorCode: 'STALE_TRANSACTION',
+                  },
+                ],
               },
             },
           }),
           { status: 200 }
         )
-      );
-    }) as typeof fetch;
+      )
+    ) as typeof fetch;
 
     const input: BulkReviewInput = { transaction_ids: ['txn_001', 'txn_002', 'txn_003'] };
     const transactions = [
@@ -113,11 +111,11 @@ describe('bulkReview', () => {
 
     assert.strictEqual(result.updatedCount, 2);
     assert.strictEqual(result.failed.length, 1);
-    // All 3 transactions attempted
-    assert.strictEqual(callCount, 3);
+    assert.strictEqual(result.failed[0].transactionId, 'txn_002');
+    assert.strictEqual(result.failed[0].error, 'Transaction too old');
   });
 
-  it('should handle all failures gracefully', async () => {
+  it('should handle API errors gracefully', async () => {
     globalThis.fetch = mock.fn(() =>
       Promise.resolve(new Response('Server error', { status: 500 }))
     ) as typeof fetch;
@@ -125,10 +123,9 @@ describe('bulkReview', () => {
     const input: BulkReviewInput = { transaction_ids: ['txn_001', 'txn_002'] };
     const transactions = [createTransaction('txn_001'), createTransaction('txn_002')];
 
-    const result = await bulkReview(mockClient, input, transactions);
-
-    assert.strictEqual(result.updatedCount, 0);
-    assert.strictEqual(result.failed.length, 2);
+    await assert.rejects(() => bulkReview(mockClient, input, transactions), {
+      message: /HTTP 500/,
+    });
   });
 });
 
