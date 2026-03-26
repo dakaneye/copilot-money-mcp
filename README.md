@@ -17,72 +17,69 @@ MCP server for [Copilot Money](https://copilot.money) personal finance app.
 
 - Node.js 20+
 - A [Copilot Money](https://copilot.money) account
-- Firebase configuration (see Setup)
+- macOS (for Keychain token storage)
 
-## Installation
-
-```bash
-npm install -g copilot-money-mcp
-```
-
-Or clone and build:
+## Quick Start
 
 ```bash
+# Clone and build
 git clone https://github.com/dakaneye/copilot-money-mcp.git
 cd copilot-money-mcp
 npm install
 npm run build
-```
 
-## Setup
-
-### 1. Get Firebase Configuration
-
-This server authenticates through Copilot Money's Firebase backend. Extract the config from the web app:
-
-1. Open https://app.copilot.money in your browser
-2. Open Developer Tools (F12) → Network tab
-3. Look for requests to `firebaseapp.com` or find the config in the page source
-4. Note the `apiKey` and `projectId` values
-
-### 2. Set Environment Variables
-
-```bash
-export COPILOT_FIREBASE_API_KEY="your-api-key"
-export COPILOT_FIREBASE_PROJECT_ID="your-project-id"
-```
-
-### 3. Authenticate
-
-```bash
-# Browser-based login (recommended)
+# Install Playwright for browser-based auth
 npx playwright install chromium
-copilot-money-mcp login
 
-# Or email-link mode (no browser required)
-copilot-money-mcp login --no-browser
+# Login (opens browser, captures token automatically)
+node dist/index.js login
+
+# Add to Claude Desktop config
 ```
 
-Tokens are stored securely in macOS Keychain.
-
-### 4. Configure Your MCP Client
-
-**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "copilot-money": {
       "command": "node",
-      "args": ["/path/to/copilot-money-mcp/dist/index.js"],
-      "env": {
-        "COPILOT_FIREBASE_API_KEY": "your-api-key",
-        "COPILOT_FIREBASE_PROJECT_ID": "your-project-id"
-      }
+      "args": ["/absolute/path/to/copilot-money-mcp/dist/index.js"]
     }
   }
 }
 ```
+
+Restart Claude Desktop. The tools will be available immediately.
+
+## Authentication
+
+### Browser Login (Recommended)
+
+```bash
+npx playwright install chromium
+node dist/index.js login
+```
+
+Opens a browser window. Log into Copilot Money normally. The token is captured automatically when you reach the dashboard.
+
+### Email Link Login (Headless/Remote)
+
+For servers without a display, use email-link authentication:
+
+```bash
+# Requires Firebase config (one-time setup)
+export COPILOT_FIREBASE_API_KEY="your-api-key"
+export COPILOT_FIREBASE_PROJECT_ID="your-project-id"
+
+node dist/index.js login
+```
+
+To get Firebase config: Open https://app.copilot.money → DevTools (F12) → Search for `apiKey` in Network or Sources.
+
+### Token Storage
+
+Tokens are stored in macOS Keychain (`copilot-money-mcp` service). They persist across restarts until they expire (~1 hour), then you'll need to login again.
 
 ## CLI Commands
 
