@@ -13,6 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install libsecret (keytar dependency)
+        run: sudo apt-get install -y libsecret-1-dev
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
