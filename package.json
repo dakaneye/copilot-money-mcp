@@ -1,6 +1,6 @@
 {
   "name": "copilot-money-mcp",
-  "version": "0.1.0",
+  "version": "1.4.0",
   "description": "MCP server for Copilot Money with read/write capabilities",
   "type": "module",
   "main": "dist/index.js",
@@ -30,6 +30,8 @@
   },
   "files": [
     "dist",
+    "!dist/src",
+    "!dist/tests",
     "README.md",
     "LICENSE"
   ],
