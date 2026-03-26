@@ -69,9 +69,12 @@ export class GraphQLClient {
         );
       }
 
+      const errorBody = await response.text();
       throw new CopilotMoneyError(
         'NETWORK_ERROR',
-        `HTTP ${response.status}: ${response.statusText}`
+        `HTTP ${response.status}: ${response.statusText}`,
+        undefined,
+        { body: errorBody }
       );
     }
 
