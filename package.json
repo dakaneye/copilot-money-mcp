@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "tsc --project tsconfig.test.json && node --test --experimental-test-coverage 'dist/tests/**/*.test.js'",
+    "test": "tsc --project tsconfig.test.json && node --test --experimental-test-coverage $(find dist/tests -name '*.test.js')",
     "lint": "eslint src tests",
     "typecheck": "tsc --noEmit"
   },
