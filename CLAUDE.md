@@ -31,17 +31,19 @@ npm run lint        # ESLint
 npm run typecheck   # Type checking only
 ```
 
-## Quality Gates (Required Before Commit)
+## Quality Gates (MANDATORY - NO EXCEPTIONS)
 
-**Do not commit or push unless ALL of these pass:**
+**STOP. Before ANY git commit or push, you MUST complete ALL of these steps. No shortcuts. No "I'll do it after." Do it NOW or don't commit.**
 
-1. **Build must succeed**: `npm run build`
-2. **Lint must pass**: `npm run lint`
-3. **Tests must pass**: `npm test`
-4. **Security scan must pass**: Review for secrets, injection, OWASP top 10
-5. **Spec coverage verified**: New functionality has corresponding tests
-6. **Commit hygiene checked**: Focused changes, no unrelated modifications
-7. **/review-code must return grade A**: Run code review before finalizing
+1. `npm run build` - must succeed
+2. `npm run lint` - must pass
+3. `npm test` - must pass
+4. Security review - check for secrets, injection, OWASP top 10
+5. Test coverage - new functionality has tests
+6. Commit hygiene - focused changes only
+7. **`/review-code` - MUST return grade A (126+/140)**
+
+If you commit without completing step 7, you have failed. Run the review. Get the grade. Then commit.
 
 ## Architecture Notes
 
