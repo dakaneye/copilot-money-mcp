@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
 import { BULK_EDIT_TRANSACTIONS_MUTATION } from '../graphql/mutations.js';
-import type { Transaction } from '../types/index.js';
 import { CopilotMoneyError } from '../types/error.js';
+
+interface BulkTransaction {
+  id: string;
+}
 
 export const bulkCategorizeInputSchema = z.object({
   transaction_ids: z.array(z.string()).describe('Transaction IDs to categorize'),
@@ -26,9 +29,9 @@ export type BulkReviewInput = z.infer<typeof bulkReviewInputSchema>;
 
 interface BulkEditResponse {
   bulkEditTransactions: {
-    updated: Transaction[];
+    updated: BulkTransaction[];
     failed: Array<{
-      transaction: Transaction;
+      transaction: BulkTransaction;
       error: string;
       errorCode: string;
     }>;
@@ -36,7 +39,8 @@ interface BulkEditResponse {
 }
 
 export interface BulkResult {
-  updated: Transaction[];
+  updatedCount: number;
+  updatedIds: string[];
   failed: Array<{
     transactionId: string;
     error: string;
@@ -73,7 +77,8 @@ export async function bulkCategorize(
   );
 
   return {
-    updated: response.bulkEditTransactions.updated,
+    updatedCount: response.bulkEditTransactions.updated.length,
+    updatedIds: response.bulkEditTransactions.updated.map((t) => t.id),
     failed: response.bulkEditTransactions.failed.map((f) => ({
       transactionId: f.transaction.id,
       error: f.error,
@@ -121,7 +126,8 @@ export async function bulkTag(
   );
 
   return {
-    updated: response.bulkEditTransactions.updated,
+    updatedCount: response.bulkEditTransactions.updated.length,
+    updatedIds: response.bulkEditTransactions.updated.map((t) => t.id),
     failed: response.bulkEditTransactions.failed.map((f) => ({
       transactionId: f.transaction.id,
       error: f.error,
@@ -147,7 +153,8 @@ export async function bulkReview(
   );
 
   return {
-    updated: response.bulkEditTransactions.updated,
+    updatedCount: response.bulkEditTransactions.updated.length,
+    updatedIds: response.bulkEditTransactions.updated.map((t) => t.id),
     failed: response.bulkEditTransactions.failed.map((f) => ({
       transactionId: f.transaction.id,
       error: f.error,
