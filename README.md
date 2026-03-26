@@ -1,7 +1,7 @@
 # copilot-money-mcp
 
 [![CI](https://github.com/dakaneye/copilot-money-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/dakaneye/copilot-money-mcp/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/copilot-money-mcp)](https://www.npmjs.com/package/copilot-money-mcp)
+[![npm](https://img.shields.io/npm/v/@dakaneye-js/copilot-money-mcp)](https://www.npmjs.com/package/@dakaneye-js/copilot-money-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 MCP server for [Copilot Money](https://copilot.money).
