@@ -4,33 +4,53 @@ MCP server for [Copilot Money](https://copilot.money).
 
 > Unofficial integration using Copilot Money's undocumented API. Use at your own risk.
 
-## Setup
+## Install
 
 ```bash
 git clone https://github.com/dakaneye/copilot-money-mcp.git
 cd copilot-money-mcp
 npm install
 npm run build
+npm link
 
-# Install Playwright and login
+# Login (opens browser, captures token)
 npx playwright install chromium
-node dist/index.js login
+copilot-money-mcp login
 ```
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+## Configure
+
+**Claude Desktop** - add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "copilot-money": {
-      "command": "node",
-      "args": ["/absolute/path/to/copilot-money-mcp/dist/index.js"]
+      "command": "copilot-money-mcp"
     }
   }
 }
 ```
 
-Restart Claude Desktop.
+**Claude Code** - add to `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "copilot-money": {
+      "command": "copilot-money-mcp"
+    }
+  }
+}
+```
+
+## CLI
+
+```bash
+copilot-money-mcp login    # Authenticate (browser)
+copilot-money-mcp logout   # Clear stored token
+copilot-money-mcp status   # Check auth status
+```
 
 ## Tools
 
