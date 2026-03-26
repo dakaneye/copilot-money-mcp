@@ -1,8 +1,12 @@
 import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
-import { BULK_EDIT_TRANSACTIONS_MUTATION } from '../graphql/mutations.js';
+import {
+  BULK_EDIT_TRANSACTIONS_MUTATION,
+  EDIT_TRANSACTION_MUTATION,
+} from '../graphql/mutations.js';
 import { CopilotMoneyError } from '../types/error.js';
 import type { Transaction } from '../types/index.js';
+import type { EditTransactionResponse } from '../types/responses.js';
 
 interface BulkTransaction {
   id: string;
@@ -157,6 +161,30 @@ export async function bulkTag(
   };
 }
 
+async function reviewTransactionIndividually(
+  client: GraphQLClient,
+  transaction: Transaction
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await client.mutate<EditTransactionResponse>(
+      'EditTransaction',
+      EDIT_TRANSACTION_MUTATION,
+      {
+        id: transaction.id,
+        itemId: transaction.itemId,
+        accountId: transaction.accountId,
+        input: { isReviewed: true },
+      }
+    );
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export async function bulkReview(
   client: GraphQLClient,
   input: BulkReviewInput,
@@ -164,25 +192,51 @@ export async function bulkReview(
 ): Promise<BulkResult> {
   const transactionRefs = buildTransactionRefs(transactions);
 
-  const response = await client.mutate<BulkEditResponse>(
-    'BulkEditTransactions',
-    BULK_EDIT_TRANSACTIONS_MUTATION,
-    {
-      filter: {
-        ids: transactionRefs,
-      },
-      input: {
-        isReviewed: true,
-      },
-    }
-  );
+  try {
+    // Try bulk first
+    const response = await client.mutate<BulkEditResponse>(
+      'BulkEditTransactions',
+      BULK_EDIT_TRANSACTIONS_MUTATION,
+      {
+        filter: {
+          ids: transactionRefs,
+        },
+        input: {
+          isReviewed: true,
+        },
+      }
+    );
 
-  return {
-    updatedCount: response.bulkEditTransactions.updated.length,
-    updatedIds: response.bulkEditTransactions.updated.map((t) => t.id),
-    failed: response.bulkEditTransactions.failed.map((f) => ({
-      transactionId: f.transaction.id,
-      error: f.error,
-    })),
-  };
+    return {
+      updatedCount: response.bulkEditTransactions.updated.length,
+      updatedIds: response.bulkEditTransactions.updated.map((t) => t.id),
+      failed: response.bulkEditTransactions.failed.map((f) => ({
+        transactionId: f.transaction.id,
+        error: f.error,
+      })),
+    };
+  } catch {
+    // Bulk failed - fall back to individual reviews
+    const updatedIds: string[] = [];
+    const failed: Array<{ transactionId: string; error: string }> = [];
+
+    // Process sequentially to avoid rate limiting
+    for (const txn of transactions) {
+      const result = await reviewTransactionIndividually(client, txn);
+      if (result.success) {
+        updatedIds.push(txn.id);
+      } else {
+        failed.push({
+          transactionId: txn.id,
+          error: result.error ?? 'Unknown error',
+        });
+      }
+    }
+
+    return {
+      updatedCount: updatedIds.length,
+      updatedIds,
+      failed,
+    };
+  }
 }
