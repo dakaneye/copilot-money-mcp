@@ -2,9 +2,25 @@ import { z } from 'zod';
 import type { GraphQLClient } from '../graphql/client.js';
 import { BULK_EDIT_TRANSACTIONS_MUTATION } from '../graphql/mutations.js';
 import { CopilotMoneyError } from '../types/error.js';
+import type { Transaction } from '../types/index.js';
 
 interface BulkTransaction {
   id: string;
+}
+
+// The API requires full transaction references, not just IDs
+interface TransactionIdRef {
+  id: string;
+  accountId: string;
+  itemId: string;
+}
+
+function buildTransactionRefs(transactions: Transaction[]): TransactionIdRef[] {
+  return transactions.map((t) => ({
+    id: t.id,
+    accountId: t.accountId,
+    itemId: t.itemId,
+  }));
 }
 
 export const bulkCategorizeInputSchema = z.object({
@@ -50,6 +66,7 @@ export interface BulkResult {
 export async function bulkCategorize(
   client: GraphQLClient,
   input: BulkCategorizeInput,
+  transactions: Transaction[],
   categoryMap: Map<string, string>,
   categoryNames: string[]
 ): Promise<BulkResult> {
@@ -63,12 +80,14 @@ export async function bulkCategorize(
     );
   }
 
+  const transactionRefs = buildTransactionRefs(transactions);
+
   const response = await client.mutate<BulkEditResponse>(
     'BulkEditTransactions',
     BULK_EDIT_TRANSACTIONS_MUTATION,
     {
       filter: {
-        ids: input.transaction_ids,
+        ids: transactionRefs,
       },
       input: {
         categoryId,
@@ -89,6 +108,7 @@ export async function bulkCategorize(
 export async function bulkTag(
   client: GraphQLClient,
   input: BulkTagInput,
+  transactions: Transaction[],
   tagMap: Map<string, string>,
   tagNames: string[]
 ): Promise<BulkResult> {
@@ -112,12 +132,14 @@ export async function bulkTag(
     );
   }
 
+  const transactionRefs = buildTransactionRefs(transactions);
+
   const response = await client.mutate<BulkEditResponse>(
     'BulkEditTransactions',
     BULK_EDIT_TRANSACTIONS_MUTATION,
     {
       filter: {
-        ids: input.transaction_ids,
+        ids: transactionRefs,
       },
       input: {
         tagIds,
@@ -137,14 +159,17 @@ export async function bulkTag(
 
 export async function bulkReview(
   client: GraphQLClient,
-  input: BulkReviewInput
+  input: BulkReviewInput,
+  transactions: Transaction[]
 ): Promise<BulkResult> {
+  const transactionRefs = buildTransactionRefs(transactions);
+
   const response = await client.mutate<BulkEditResponse>(
     'BulkEditTransactions',
     BULK_EDIT_TRANSACTIONS_MUTATION,
     {
       filter: {
-        ids: input.transaction_ids,
+        ids: transactionRefs,
       },
       input: {
         isReviewed: true,

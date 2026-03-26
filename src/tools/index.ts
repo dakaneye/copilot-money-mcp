@@ -119,23 +119,28 @@ function getTagNames(): string[] {
   return tagCache.data?.map((t) => t.name) ?? [];
 }
 
-async function findTransaction(
+async function fetchRecentTransactions(
   client: GraphQLClient,
-  transactionId: string
-): Promise<Transaction> {
+  limit: number = 200
+): Promise<Transaction[]> {
   const response = await client.query<TransactionsResponse>(
     'Transactions',
     TRANSACTIONS_QUERY,
     {
-      first: 100,
+      first: limit,
       filter: null,
       sort: [{ field: 'DATE', direction: 'DESC' }],
     }
   );
+  return response.transactions.edges.map((e) => e.node);
+}
 
-  const txn = response.transactions.edges.find(
-    (e) => e.node.id === transactionId
-  )?.node;
+async function findTransaction(
+  client: GraphQLClient,
+  transactionId: string
+): Promise<Transaction> {
+  const transactions = await fetchRecentTransactions(client, 100);
+  const txn = transactions.find((t) => t.id === transactionId);
 
   if (!txn) {
     throw new CopilotMoneyError(
@@ -145,6 +150,33 @@ async function findTransaction(
   }
 
   return txn;
+}
+
+async function findTransactions(
+  client: GraphQLClient,
+  transactionIds: string[]
+): Promise<Transaction[]> {
+  const allTransactions = await fetchRecentTransactions(client, 200);
+  const found: Transaction[] = [];
+  const notFound: string[] = [];
+
+  for (const id of transactionIds) {
+    const txn = allTransactions.find((t) => t.id === id);
+    if (txn) {
+      found.push(txn);
+    } else {
+      notFound.push(id);
+    }
+  }
+
+  if (notFound.length > 0) {
+    throw new CopilotMoneyError(
+      'TRANSACTION_NOT_FOUND',
+      `Transactions not found: ${notFound.join(', ')}. Only the 200 most recent transactions are searchable.`
+    );
+  }
+
+  return found;
 }
 
 function formatResult(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
@@ -370,9 +402,11 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     async (args: BulkCategorizeInput) => {
       try {
         await ensureCaches(client);
+        const transactions = await findTransactions(client, args.transaction_ids);
         const result = await bulkCategorize(
           client,
           args,
+          transactions,
           categoryMap,
           getCategoryNames()
         );
@@ -390,7 +424,8 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     async (args: BulkTagInput) => {
       try {
         await ensureCaches(client);
-        const result = await bulkTag(client, args, tagMap, getTagNames());
+        const transactions = await findTransactions(client, args.transaction_ids);
+        const result = await bulkTag(client, args, transactions, tagMap, getTagNames());
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -404,7 +439,8 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     bulkReviewInputSchema.shape,
     async (args: BulkReviewInput) => {
       try {
-        const result = await bulkReview(client, args);
+        const transactions = await findTransactions(client, args.transaction_ids);
+        const result = await bulkReview(client, args, transactions);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
