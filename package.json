@@ -1,6 +1,6 @@
 {
   "name": "@dakaneye-js/copilot-money-mcp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MCP server for Copilot Money with read/write capabilities",
   "type": "module",
   "main": "dist/index.js",
