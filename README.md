@@ -1,5 +1,8 @@
 # copilot-money-mcp
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js 20+](https://img.shields.io/badge/node-20%2B-brightgreen.svg)](https://nodejs.org)
+
 MCP server for [Copilot Money](https://copilot.money).
 
 > Unofficial integration using Copilot Money's undocumented API. Use at your own risk.
