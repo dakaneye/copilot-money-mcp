@@ -22,8 +22,17 @@
     "copilot-money",
     "personal-finance"
   ],
-  "author": "",
+  "author": "dakaneye",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dakaneye/copilot-money-mcp.git"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "firebase": "^12.11.0",
