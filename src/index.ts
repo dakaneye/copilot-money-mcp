@@ -7,8 +7,9 @@ import {
   getToken,
   storeToken,
   clearToken,
+  storeCredentials,
   isPlaywrightAvailable,
-  captureTokenWithPlaywright,
+  interactiveLogin,
   captureTokenWithEmailLink,
 } from './auth/index.js';
 import { GraphQLClient } from './graphql/client.js';
@@ -35,19 +36,20 @@ async function runLogin(): Promise<void> {
 
   if (!noBrowser && await isPlaywrightAvailable()) {
     console.log('\nLaunching browser for Copilot Money login...');
-    console.log('Log in normally. The token will be captured automatically.\n');
+    console.log('Log in with your email and password. The token will be captured automatically.\n');
 
     try {
-      const result = await captureTokenWithPlaywright();
-      if (!result.expiresAt) {
-        throw new Error('Token must have an expiration time');
-      }
+      const result = await interactiveLogin();
       await storeToken({
         token: result.token,
         expiresAt: result.expiresAt,
       });
+      await storeCredentials({
+        email: result.email,
+        password: result.password,
+      });
 
-      console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}). Token stored in keychain.`);
+      console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}). Token and credentials stored in keychain.`);
       return;
     } catch (error) {
       console.error(`\nBrowser login failed: ${error instanceof Error ? error.message : error}`);
