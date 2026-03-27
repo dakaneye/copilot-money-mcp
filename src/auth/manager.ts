@@ -1,20 +1,20 @@
 import {
-  getStoredTokens as defaultGetStoredTokens,
-  clearTokens as defaultClearTokens,
+  getToken as defaultGetToken,
+  clearAll as defaultClearAll,
   isTokenExpired as defaultIsTokenExpired,
-  type StoredTokens,
+  type StoredToken,
 } from './keychain.js';
 import { CopilotMoneyError } from '../types/error.js';
 
 export interface KeychainDeps {
-  getStoredTokens: () => Promise<StoredTokens | null>;
-  clearTokens: () => Promise<void>;
-  isTokenExpired: (expiresAt: number | null) => boolean;
+  getToken: () => Promise<StoredToken | null>;
+  clearAll: () => Promise<void>;
+  isTokenExpired: (token: StoredToken) => boolean;
 }
 
 const defaultDeps: KeychainDeps = {
-  getStoredTokens: defaultGetStoredTokens,
-  clearTokens: defaultClearTokens,
+  getToken: defaultGetToken,
+  clearAll: defaultClearAll,
   isTokenExpired: defaultIsTokenExpired,
 };
 
@@ -31,10 +31,10 @@ export class AuthManager {
       return this.cachedToken;
     }
 
-    const stored = await this.deps.getStoredTokens();
-    if (stored && !this.deps.isTokenExpired(stored.expiresAt)) {
-      this.cachedToken = stored.accessToken;
-      return stored.accessToken;
+    const stored = await this.deps.getToken();
+    if (stored && !this.deps.isTokenExpired(stored)) {
+      this.cachedToken = stored.token;
+      return stored.token;
     }
 
     throw new CopilotMoneyError(
@@ -49,7 +49,7 @@ export class AuthManager {
 
   async handleAuthError(): Promise<string> {
     this.cachedToken = null;
-    await this.deps.clearTokens();
+    await this.deps.clearAll();
     throw new CopilotMoneyError(
       'NOT_AUTHENTICATED',
       "Session expired. Run 'copilot-money-mcp login' to re-authenticate."
@@ -58,7 +58,7 @@ export class AuthManager {
 
   async logout(): Promise<void> {
     this.cachedToken = null;
-    await this.deps.clearTokens();
+    await this.deps.clearAll();
   }
 }
 

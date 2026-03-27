@@ -4,9 +4,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   getAuthManager,
-  getStoredTokens,
-  storeTokens,
-  clearTokens,
+  getToken,
+  storeToken,
+  clearToken,
   isPlaywrightAvailable,
   captureTokenWithPlaywright,
   captureTokenWithEmailLink,
@@ -39,17 +39,15 @@ async function runLogin(): Promise<void> {
 
     try {
       const result = await captureTokenWithPlaywright();
-      await storeTokens({
-        accessToken: result.token,
-        refreshToken: null,
+      if (!result.expiresAt) {
+        throw new Error('Token must have an expiration time');
+      }
+      await storeToken({
+        token: result.token,
         expiresAt: result.expiresAt,
       });
 
-      if (result.expiresAt) {
-        console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}). Token stored in keychain.`);
-      } else {
-        console.log('\nLogin successful. Token stored in keychain.');
-      }
+      console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}). Token stored in keychain.`);
       return;
     } catch (error) {
       console.error(`\nBrowser login failed: ${error instanceof Error ? error.message : error}`);
@@ -65,17 +63,15 @@ async function runLogin(): Promise<void> {
 
   try {
     const result = await captureTokenWithEmailLink();
-    await storeTokens({
-      accessToken: result.token,
-      refreshToken: null,
+    if (!result.expiresAt) {
+      throw new Error('Token must have an expiration time');
+    }
+    await storeToken({
+      token: result.token,
       expiresAt: result.expiresAt,
     });
 
-    if (result.expiresAt) {
-      console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}). Token stored in keychain.`);
-    } else {
-      console.log('\nLogin successful. Token stored in keychain.');
-    }
+    console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}). Token stored in keychain.`);
   } catch (error) {
     console.error(`\nLogin failed: ${error instanceof Error ? error.message : error}`);
     process.exit(1);
@@ -83,12 +79,12 @@ async function runLogin(): Promise<void> {
 }
 
 async function runLogout(): Promise<void> {
-  await clearTokens();
+  await clearToken();
   console.log('Token cleared from keychain.');
 }
 
 async function runStatus(): Promise<void> {
-  const stored = await getStoredTokens();
+  const stored = await getToken();
 
   if (!stored) {
     console.log('Token: not configured');

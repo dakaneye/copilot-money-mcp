@@ -1,80 +1,107 @@
 import keytar from 'keytar';
 
-const SERVICE_NAME = 'copilot-money-mcp';
-const ACCOUNT_ACCESS = 'access_token';
-const ACCOUNT_REFRESH = 'refresh_token';
-const ACCOUNT_EXPIRES = 'expires_at';
+const SERVICE_NAME = 'copilot-money-auth';
+const ACCOUNT_TOKEN = 'token';
+const ACCOUNT_CREDENTIALS = 'credentials';
 
-export interface StoredTokens {
-  accessToken: string;
-  refreshToken: string | null;
-  expiresAt: number | null;
+export interface StoredToken {
+  token: string;
+  expiresAt: number;
 }
 
-export async function getStoredTokens(): Promise<StoredTokens | null> {
-  const [accessToken, refreshToken, expiresAtStr] = await Promise.all([
-    keytar.getPassword(SERVICE_NAME, ACCOUNT_ACCESS),
-    keytar.getPassword(SERVICE_NAME, ACCOUNT_REFRESH),
-    keytar.getPassword(SERVICE_NAME, ACCOUNT_EXPIRES),
-  ]);
-
-  if (!accessToken) {
-    return null;
-  }
-
-  let expiresAt: number | null = null;
-  if (expiresAtStr) {
-    const parsed = parseInt(expiresAtStr, 10);
-    expiresAt = Number.isNaN(parsed) ? null : parsed;
-  }
-
-  return { accessToken, refreshToken, expiresAt };
+export interface StoredCredentials {
+  email: string;
+  password: string;
 }
 
-async function safeDeletePassword(account: string): Promise<void> {
-  try {
-    await keytar.deletePassword(SERVICE_NAME, account);
-  } catch (error) {
-    // Ignore "not found" errors, log unexpected ones
-    if (error instanceof Error && !error.message.includes('not found')) {
-      console.error(`Failed to delete ${account}:`, error.message);
+export interface KeychainDeps {
+  setPassword: (service: string, account: string, password: string) => Promise<void>;
+  getPassword: (service: string, account: string) => Promise<string | null>;
+  deletePassword: (service: string, account: string) => Promise<boolean>;
+}
+
+const defaultDeps: KeychainDeps = {
+  setPassword: keytar.setPassword.bind(keytar),
+  getPassword: keytar.getPassword.bind(keytar),
+  deletePassword: keytar.deletePassword.bind(keytar),
+};
+
+export function createKeychain(deps: KeychainDeps = defaultDeps) {
+  async function storeToken(token: StoredToken): Promise<void> {
+    const value = JSON.stringify(token);
+    await deps.setPassword(SERVICE_NAME, ACCOUNT_TOKEN, value);
+  }
+
+  async function getToken(): Promise<StoredToken | null> {
+    const value = await deps.getPassword(SERVICE_NAME, ACCOUNT_TOKEN);
+    if (!value) return null;
+    try {
+      return JSON.parse(value) as StoredToken;
+    } catch {
+      return null;
     }
   }
-}
 
-export async function storeTokens(tokens: StoredTokens): Promise<void> {
-  if (!tokens.accessToken || tokens.accessToken.trim() === '') {
-    throw new Error('accessToken cannot be empty');
+  async function clearToken(): Promise<void> {
+    try {
+      await deps.deletePassword(SERVICE_NAME, ACCOUNT_TOKEN);
+    } catch {
+      // Ignore errors - may not exist
+    }
   }
 
-  await keytar.setPassword(SERVICE_NAME, ACCOUNT_ACCESS, tokens.accessToken);
-
-  if (tokens.refreshToken) {
-    await keytar.setPassword(SERVICE_NAME, ACCOUNT_REFRESH, tokens.refreshToken);
-  } else {
-    await safeDeletePassword(ACCOUNT_REFRESH);
+  async function storeCredentials(creds: StoredCredentials): Promise<void> {
+    const value = JSON.stringify(creds);
+    await deps.setPassword(SERVICE_NAME, ACCOUNT_CREDENTIALS, value);
   }
 
-  if (tokens.expiresAt) {
-    await keytar.setPassword(SERVICE_NAME, ACCOUNT_EXPIRES, tokens.expiresAt.toString());
-  } else {
-    await safeDeletePassword(ACCOUNT_EXPIRES);
+  async function getCredentials(): Promise<StoredCredentials | null> {
+    const value = await deps.getPassword(SERVICE_NAME, ACCOUNT_CREDENTIALS);
+    if (!value) return null;
+    try {
+      return JSON.parse(value) as StoredCredentials;
+    } catch {
+      return null;
+    }
   }
+
+  async function clearCredentials(): Promise<void> {
+    try {
+      await deps.deletePassword(SERVICE_NAME, ACCOUNT_CREDENTIALS);
+    } catch {
+      // Ignore errors - may not exist
+    }
+  }
+
+  async function clearAll(): Promise<void> {
+    await Promise.all([clearToken(), clearCredentials()]);
+  }
+
+  function isTokenExpired(token: StoredToken): boolean {
+    const BUFFER_MS = 10 * 60 * 1000; // 10 minutes before expiry
+    return Date.now() > token.expiresAt - BUFFER_MS;
+  }
+
+  return {
+    storeToken,
+    getToken,
+    clearToken,
+    storeCredentials,
+    getCredentials,
+    clearCredentials,
+    clearAll,
+    isTokenExpired,
+  };
 }
 
-export async function clearTokens(): Promise<void> {
-  await Promise.all([
-    safeDeletePassword(ACCOUNT_ACCESS),
-    safeDeletePassword(ACCOUNT_REFRESH),
-    safeDeletePassword(ACCOUNT_EXPIRES),
-  ]);
-}
+// Default instance for convenience
+const defaultKeychain = createKeychain();
 
-export function isTokenExpired(expiresAt: number | null): boolean {
-  if (!expiresAt) {
-    return false;
-  }
-  // Consider expired if within 5 minutes of expiry
-  const EXPIRY_BUFFER = 5 * 60 * 1000;
-  return Date.now() > expiresAt - EXPIRY_BUFFER;
-}
+export const storeToken = defaultKeychain.storeToken;
+export const getToken = defaultKeychain.getToken;
+export const clearToken = defaultKeychain.clearToken;
+export const storeCredentials = defaultKeychain.storeCredentials;
+export const getCredentials = defaultKeychain.getCredentials;
+export const clearCredentials = defaultKeychain.clearCredentials;
+export const clearAll = defaultKeychain.clearAll;
+export const isTokenExpired = defaultKeychain.isTokenExpired;
