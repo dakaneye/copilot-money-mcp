@@ -141,7 +141,8 @@ export async function interactiveLogin(): Promise<LoginResult> {
  */
 export async function automatedLogin(email: string, password: string): Promise<{ token: string; expiresAt: number }> {
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  // Use headed mode - Copilot Money detects headless browsers
+  const browser = await chromium.launch({ headless: false });
   const context = await browser.newContext();
   const page = await context.newPage();
 
