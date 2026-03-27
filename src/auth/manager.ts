@@ -1,46 +1,34 @@
-import {
-  getToken as defaultGetToken,
-  clearAll as defaultClearAll,
-  isTokenExpired as defaultIsTokenExpired,
-  type StoredToken,
-} from './keychain.js';
+import { SocketClient } from './socket.js';
 import { CopilotMoneyError } from '../types/error.js';
 
-export interface KeychainDeps {
-  getToken: () => Promise<StoredToken | null>;
-  clearAll: () => Promise<void>;
-  isTokenExpired: (token: StoredToken) => boolean;
-}
-
-const defaultDeps: KeychainDeps = {
-  getToken: defaultGetToken,
-  clearAll: defaultClearAll,
-  isTokenExpired: defaultIsTokenExpired,
-};
+const TOKEN_CACHE_TTL = 30 * 1000; // 30 seconds
 
 export class AuthManager {
   private cachedToken: string | null = null;
-  private deps: KeychainDeps;
+  private cachedExpiry: number = 0;
+  private client: SocketClient;
 
-  constructor(deps: KeychainDeps = defaultDeps) {
-    this.deps = deps;
+  constructor(socketClient?: SocketClient) {
+    this.client = socketClient ?? new SocketClient();
   }
 
   async getAccessToken(): Promise<string> {
-    if (this.cachedToken) {
+    // Return cached token if still valid
+    if (this.cachedToken && Date.now() < this.cachedExpiry) {
       return this.cachedToken;
     }
 
-    const stored = await this.deps.getToken();
-    if (stored && !this.deps.isTokenExpired(stored)) {
-      this.cachedToken = stored.token;
-      return stored.token;
+    try {
+      const response = await this.client.getToken();
+      this.cachedToken = response.token;
+      this.cachedExpiry = Date.now() + TOKEN_CACHE_TTL;
+      return response.token;
+    } catch (error) {
+      throw new CopilotMoneyError(
+        'NOT_AUTHENTICATED',
+        error instanceof Error ? error.message : 'Failed to get token from auth daemon'
+      );
     }
-
-    throw new CopilotMoneyError(
-      'NOT_AUTHENTICATED',
-      "Not authenticated. Run 'copilot-money-mcp login' to set up authentication."
-    );
   }
 
   async ensureAuthenticated(): Promise<string> {
@@ -48,17 +36,19 @@ export class AuthManager {
   }
 
   async handleAuthError(): Promise<string> {
+    // Clear cache and try to refresh
     this.cachedToken = null;
-    await this.deps.clearAll();
-    throw new CopilotMoneyError(
-      'NOT_AUTHENTICATED',
-      "Session expired. Run 'copilot-money-mcp login' to re-authenticate."
-    );
-  }
+    this.cachedExpiry = 0;
 
-  async logout(): Promise<void> {
-    this.cachedToken = null;
-    await this.deps.clearAll();
+    try {
+      await this.client.refresh();
+      return this.getAccessToken();
+    } catch {
+      throw new CopilotMoneyError(
+        'NOT_AUTHENTICATED',
+        "Session expired. Run 'copilot-auth login' to re-authenticate."
+      );
+    }
   }
 }
 
