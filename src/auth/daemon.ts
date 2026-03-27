@@ -168,3 +168,11 @@ export async function runDaemon(): Promise<void> {
 
   await daemon.start();
 }
+
+// Run if invoked directly
+if (process.argv[1]?.endsWith('daemon.js') && process.argv.includes('--run')) {
+  runDaemon().catch((err) => {
+    console.error('[daemon] Fatal error:', err);
+    process.exit(1);
+  });
+}

@@ -172,7 +172,7 @@ export async function automatedLogin(email: string, password: string): Promise<{
 
     // Click "Sign in with password instead"
     const passwordInsteadButton = page.locator('button:has-text("Sign in with password instead")');
-    await passwordInsteadButton.waitFor({ state: 'visible', timeout: 5000 });
+    await passwordInsteadButton.waitFor({ state: 'visible', timeout: 30000 });
     await passwordInsteadButton.click();
     await page.waitForTimeout(1000);
 

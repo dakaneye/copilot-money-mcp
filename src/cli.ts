@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -10,11 +10,72 @@ import {
   getToken,
   getCredentials,
 } from './auth/keychain.js';
-import { interactiveLogin, isPlaywrightAvailable } from './auth/playwright.js';
+import { automatedLogin, isPlaywrightAvailable } from './auth/playwright.js';
+import * as readline from 'node:readline/promises';
 import { SocketClient } from './auth/socket.js';
 import { runDaemon } from './auth/daemon.js';
 
+interface OpCredentials {
+  email: string;
+  password: string;
+}
+
+function tryGetCredentialsFromOp(item: string = 'Copilot'): OpCredentials | null {
+  try {
+    const result = execSync(`op item get "${item}" --format json`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const data = JSON.parse(result);
+    const fields = data.fields as Array<{ id: string; value?: string }>;
+    const email = fields.find((f) => f.id === 'username')?.value;
+    const password = fields.find((f) => f.id === 'password')?.value;
+    if (!email || !password) {
+      return null;
+    }
+    return { email, password };
+  } catch {
+    return null;
+  }
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+async function readPassword(prompt: string): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdout.write(prompt);
+
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    let password = '';
+
+    const onData = (char: string): void => {
+      if (char === '\n' || char === '\r') {
+        stdin.setRawMode(false);
+        stdin.removeListener('data', onData);
+        stdin.pause();
+        process.stdout.write('\n');
+        resolve(password);
+      } else if (char === '\u007F' || char === '\b') {
+        if (password.length > 0) {
+          password = password.slice(0, -1);
+          process.stdout.write('\b \b');
+        }
+      } else if (char === '\u0003') {
+        process.stdout.write('\n');
+        process.exit(1);
+      } else {
+        password += char;
+        process.stdout.write('*');
+      }
+    };
+
+    stdin.on('data', onData);
+  });
+}
 
 function formatTimeRemaining(expiresAt: number): string {
   const diff = expiresAt - Date.now();
@@ -32,24 +93,51 @@ function formatTimeRemaining(expiresAt: number): string {
   return `expires in ${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
-async function runLogin(): Promise<void> {
+async function runLogin(opItem?: string): Promise<void> {
   if (!await isPlaywrightAvailable()) {
     console.error('Playwright is required for login.');
     console.error('Run: npx playwright install chromium');
     process.exit(1);
   }
 
+  let email: string;
+  let password: string;
+
+  // Try 1Password first
+  const opCreds = tryGetCredentialsFromOp(opItem);
+  if (opCreds) {
+    console.log(`Using credentials from 1Password for ${opCreds.email}`);
+    email = opCreds.email;
+    password = opCreds.password;
+  } else {
+    // Fall back to interactive input
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    email = await rl.question('Email: ');
+    rl.close();
+    password = await readPassword('Password: ');
+
+    if (!email || !password) {
+      console.error('Email and password are required.');
+      process.exit(1);
+    }
+  }
+
+  console.log('\nLogging in (this takes ~15 seconds)...');
+
   try {
-    const result = await interactiveLogin();
-
     // Store credentials for future automated refresh
-    await storeCredentials({ email: result.email, password: result.password });
+    await storeCredentials({ email, password });
 
-    // Store token
+    // Run automated login to get token
+    const result = await automatedLogin(email, password);
     await storeToken({ token: result.token, expiresAt: result.expiresAt });
 
-    console.log(`\nLogin successful (${formatTimeRemaining(result.expiresAt)}).`);
-    console.log('Token and credentials stored securely in keychain.');
+    console.log(`Login successful (${formatTimeRemaining(result.expiresAt)}).`);
+    console.log('Credentials and token stored securely in keychain.');
 
     // Start daemon if not running
     const client = new SocketClient();
@@ -199,26 +287,32 @@ async function runDaemonCommand(subcommand: string): Promise<void> {
 }
 
 function printHelp(): void {
-  console.log(`Usage: copilot-auth <command>
+  console.log(`Usage: copilot-auth <command> [options]
 
 Commands:
-  login           Authenticate with Copilot Money (interactive)
-  logout          Clear stored credentials and tokens
-  status          Show authentication status
+  login [item]          Authenticate with Copilot Money
+                        Tries 1Password first (item name, default: "Copilot")
+                        Falls back to interactive prompt if op unavailable
+  logout                Clear stored credentials and tokens
+  status                Show authentication status
 
-  daemon start    Start the token refresh daemon
-  daemon stop     Stop the token refresh daemon
-  daemon status   Check if daemon is running
+  daemon start          Start the token refresh daemon
+  daemon stop           Stop the token refresh daemon
+  daemon status         Check if daemon is running
 `);
 }
 
 async function main(): Promise<void> {
-  const [command, subcommand] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const command = args[0];
 
   switch (command) {
-    case 'login':
-      await runLogin();
+    case 'login': {
+      // Optional: specify 1Password item name as argument (default: "Copilot")
+      const opItem = args[1] && !args[1].startsWith('-') ? args[1] : undefined;
+      await runLogin(opItem);
       break;
+    }
 
     case 'logout':
       await runLogout();
@@ -229,7 +323,7 @@ async function main(): Promise<void> {
       break;
 
     case 'daemon':
-      await runDaemonCommand(subcommand || 'status');
+      await runDaemonCommand(args[1] || 'status');
       break;
 
     case 'help':

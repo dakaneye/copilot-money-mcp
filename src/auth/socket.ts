@@ -117,17 +117,22 @@ export class SocketServer {
 
         socket.on('data', (chunk) => {
           data += chunk.toString();
-        });
-
-        socket.on('end', async () => {
+          // Try to parse on each chunk - respond as soon as we have valid JSON
           try {
             const request = JSON.parse(data) as SocketRequest;
-            const response = await this.handler(request);
-            socket.write(JSON.stringify(response));
-          } catch (err) {
-            socket.write(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }));
+            // Got valid request, process it
+            this.handler(request)
+              .then((response) => {
+                socket.write(JSON.stringify(response));
+                socket.end();
+              })
+              .catch((err) => {
+                socket.write(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }));
+                socket.end();
+              });
+          } catch {
+            // Not valid JSON yet, wait for more data
           }
-          socket.end();
         });
 
         socket.on('error', () => {
