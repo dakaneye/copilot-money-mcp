@@ -1,123 +1,90 @@
-import { describe, it, beforeEach, mock, type Mock } from 'node:test';
+import { test, describe, mock } from 'node:test';
 import assert from 'node:assert';
-import { AuthManager, type KeychainDeps } from '../../src/auth/manager.js';
-import { CopilotMoneyError } from '../../src/types/error.js';
-import type { StoredToken } from '../../src/auth/keychain.js';
-
-type MockFn<T extends (...args: never[]) => unknown> = Mock<T>;
+import { AuthManager } from '../../src/auth/manager.js';
 
 describe('AuthManager', () => {
-  let authManager: AuthManager;
-  let getTokenMock: MockFn<() => Promise<StoredToken | null>>;
-  let clearAllMock: MockFn<() => Promise<void>>;
-  let isTokenExpiredMock: MockFn<(token: StoredToken) => boolean>;
-
-  beforeEach(() => {
-    getTokenMock = mock.fn<() => Promise<StoredToken | null>>(() => Promise.resolve(null));
-    clearAllMock = mock.fn<() => Promise<void>>(() => Promise.resolve());
-    isTokenExpiredMock = mock.fn<(token: StoredToken) => boolean>(() => false);
-
-    const mockDeps: KeychainDeps = {
-      getToken: getTokenMock,
-      clearAll: clearAllMock,
-      isTokenExpired: isTokenExpiredMock,
+  test('getAccessToken returns token from socket client', async () => {
+    const mockClient = {
+      getToken: mock.fn(() => Promise.resolve({
+        token: 'test-token-123',
+        expiresAt: '2026-03-27T18:00:00.000Z',
+      })),
+      refresh: mock.fn(() => Promise.resolve({ success: true, expiresAt: null })),
+      isRunning: mock.fn(() => Promise.resolve(true)),
+      getStatus: mock.fn(() => Promise.resolve({ authenticated: true, email: null, expiresAt: null })),
     };
-    authManager = new AuthManager(mockDeps);
+
+    const manager = new AuthManager(mockClient as never);
+
+    const token = await manager.getAccessToken();
+
+    assert.strictEqual(token, 'test-token-123');
+    assert.strictEqual(mockClient.getToken.mock.calls.length, 1);
   });
 
-  describe('getAccessToken', () => {
-    it('should return cached token if available', async () => {
-      const token = 'cached-token';
-      (authManager as unknown as { cachedToken: string })['cachedToken'] = token;
+  test('getAccessToken caches token for 30 seconds', async () => {
+    const mockClient = {
+      getToken: mock.fn(() => Promise.resolve({
+        token: 'test-token-123',
+        expiresAt: '2026-03-27T18:00:00.000Z',
+      })),
+      refresh: mock.fn(() => Promise.resolve({ success: true, expiresAt: null })),
+    };
 
-      const result = await authManager.getAccessToken();
-      assert.strictEqual(result, token);
-      assert.strictEqual(getTokenMock.mock.callCount(), 0);
-    });
+    const manager = new AuthManager(mockClient as never);
 
-    it('should throw NOT_AUTHENTICATED when no stored tokens', async () => {
-      await assert.rejects(
-        () => authManager.getAccessToken(),
-        (error: unknown) => {
-          return (
-            error instanceof CopilotMoneyError &&
-            error.code === 'NOT_AUTHENTICATED'
-          );
-        },
-        'Should throw NOT_AUTHENTICATED error when no stored tokens'
-      );
-    });
+    // First call
+    await manager.getAccessToken();
+    // Second call should use cache
+    await manager.getAccessToken();
 
-    it('should return stored token when not expired', async () => {
-      const storedToken: StoredToken = {
-        token: 'stored-token',
-        expiresAt: Date.now() + 60000,
-      };
-
-      getTokenMock.mock.mockImplementation(() => Promise.resolve(storedToken));
-
-      const result = await authManager.getAccessToken();
-      assert.strictEqual(result, 'stored-token');
-    });
-
-    it('should throw NOT_AUTHENTICATED when stored token is expired', async () => {
-      const storedToken: StoredToken = {
-        token: 'expired-token',
-        expiresAt: Date.now() - 60000,
-      };
-
-      getTokenMock.mock.mockImplementation(() => Promise.resolve(storedToken));
-      isTokenExpiredMock.mock.mockImplementation(() => true);
-
-      await assert.rejects(
-        () => authManager.getAccessToken(),
-        (error: unknown) => {
-          return (
-            error instanceof CopilotMoneyError &&
-            error.code === 'NOT_AUTHENTICATED'
-          );
-        }
-      );
-    });
+    assert.strictEqual(mockClient.getToken.mock.calls.length, 1);
   });
 
-  describe('handleAuthError', () => {
-    it('should clear cache and tokens then throw', async () => {
-      (authManager as unknown as { cachedToken: string })['cachedToken'] = 'some-token';
+  test('getAccessToken throws when daemon not running', async () => {
+    const mockClient = {
+      getToken: mock.fn(() => Promise.reject(new Error('Auth daemon not running. Run `copilot-auth login` first.'))),
+      refresh: mock.fn(() => Promise.resolve({ success: false, expiresAt: null })),
+    };
 
-      await assert.rejects(
-        () => authManager.handleAuthError(),
-        (error: unknown) => {
-          return (
-            error instanceof CopilotMoneyError &&
-            error.code === 'NOT_AUTHENTICATED'
-          );
-        }
-      );
+    const manager = new AuthManager(mockClient as never);
 
-      assert.strictEqual(clearAllMock.mock.callCount(), 1);
-      assert.strictEqual((authManager as unknown as { cachedToken: string | null })['cachedToken'], null);
-    });
+    await assert.rejects(
+      () => manager.getAccessToken(),
+      /daemon not running/i
+    );
   });
 
-  describe('logout', () => {
-    it('should clear cached token and call clearAll', async () => {
-      (authManager as unknown as { cachedToken: string })['cachedToken'] = 'some-token';
+  test('handleAuthError attempts refresh', async () => {
+    const mockClient = {
+      getToken: mock.fn(() => Promise.resolve({
+        token: 'refreshed-token',
+        expiresAt: '2026-03-27T19:00:00.000Z',
+      })),
+      refresh: mock.fn(() => Promise.resolve({ success: true, expiresAt: null })),
+    };
 
-      await authManager.logout();
+    const manager = new AuthManager(mockClient as never);
 
-      assert.strictEqual((authManager as unknown as { cachedToken: string | null })['cachedToken'], null);
-      assert.strictEqual(clearAllMock.mock.callCount(), 1);
-    });
+    const token = await manager.handleAuthError();
+
+    assert.strictEqual(mockClient.refresh.mock.calls.length, 1);
+    assert.strictEqual(token, 'refreshed-token');
   });
 
-  describe('ensureAuthenticated', () => {
-    it('should delegate to getAccessToken', async () => {
-      const token = 'test-token';
-      (authManager as unknown as { cachedToken: string })['cachedToken'] = token;
+  test('ensureAuthenticated delegates to getAccessToken', async () => {
+    const mockClient = {
+      getToken: mock.fn(() => Promise.resolve({
+        token: 'test-token',
+        expiresAt: '2026-03-27T18:00:00.000Z',
+      })),
+      refresh: mock.fn(() => Promise.resolve({ success: true, expiresAt: null })),
+    };
 
-      const result = await authManager.ensureAuthenticated();
-      assert.strictEqual(result, token);
-    });
+    const manager = new AuthManager(mockClient as never);
+
+    const token = await manager.ensureAuthenticated();
+
+    assert.strictEqual(token, 'test-token');
   });
 });
