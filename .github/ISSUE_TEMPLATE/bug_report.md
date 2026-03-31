@@ -17,8 +17,12 @@ What you expected to happen.
 
 **Environment**
 - OS: [e.g. macOS 14.0]
-- Node.js version: [e.g. 20.10.0]
-- MCP client: [e.g. Claude Desktop, Claude Code]
+- Version: [e.g. 0.1.0]
+
+**Logs**
+```
+Paste relevant logs here
+```
 
 **Additional context**
 Any other relevant information.
