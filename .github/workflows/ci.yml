@@ -7,6 +7,6 @@ on:
 
 jobs:
   ci:
-    uses: dakaneye/hookshot/.github/workflows/node-ci.yml@663620c798a7f17f0bbc2c6e6b0205eacf2fb7de
+    uses: dakaneye/hookshot/.github/workflows/node-ci.yml@5c330982fa74bb2d99f51cd3e8217362d9ebd1d6
     with:
       apt-packages: "libsecret-1-dev"
