@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Grype filesystem scan
-        uses: anchore/scan-action@ba2e18e34737763b9c92004dfe2afbcbd2d6207d # main
+        uses: anchore/scan-action@169928c7487a75f3bf714d50d8052584b778068d # main
         with:
           path: "."
           fail-build: true
@@ -23,7 +23,7 @@ jobs:
           only-fixed: true
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3
+        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         if: always()
         with:
           sarif_file: results.sarif

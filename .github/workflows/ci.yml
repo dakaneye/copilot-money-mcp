@@ -10,3 +10,4 @@ jobs:
     uses: dakaneye/hookshot/.github/workflows/node-ci.yml@663620c798a7f17f0bbc2c6e6b0205eacf2fb7de
     with:
       apt-packages: "libsecret-1-dev"
+
