@@ -41,4 +41,4 @@ jobs:
         uses: dakaneye/hookshot/release-pilot@52b2355d64b94e8e3009e30a27df60b0bb2d51e6
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          draft: true
+          args: --tag ${{ github.ref_name }}

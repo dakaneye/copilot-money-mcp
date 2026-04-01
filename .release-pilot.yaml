@@ -1,0 +1,5 @@
+ecosystem: node
+model: claude-sonnet-4-6
+
+github:
+  draft: true
