@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Grype filesystem scan
-        uses: anchore/scan-action@ba2e18e34737763b9c92004dfe2afbcbd2d6207d # main
+        uses: anchore/scan-action@169928c7487a75f3bf714d50d8052584b778068d # main
         with:
           path: "."
           fail-build: true
