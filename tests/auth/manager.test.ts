@@ -1,90 +1,87 @@
 import { test, describe, mock } from 'node:test';
 import assert from 'node:assert';
-import { AuthManager } from '../../src/auth/manager.js';
+import { createAuthManager } from '../../src/auth/manager.js';
+
+function mockKeychain(
+  initial: { token: string; expiresAt: number; email: string; refreshToken: string } | null
+) {
+  let state = initial;
+  return {
+    getToken: mock.fn(async () => state),
+    setToken: mock.fn(async (v: typeof state) => {
+      state = v;
+    }),
+    clearCredentials: mock.fn(async () => {
+      state = null;
+    }),
+  };
+}
 
 describe('AuthManager', () => {
-  test('getAccessToken returns token from socket client', async () => {
-    const mockClient = {
-      getToken: mock.fn(() => Promise.resolve({
-        token: 'test-token-123',
-        expiresAt: '2026-03-27T18:00:00.000Z',
-      })),
-      refresh: mock.fn(() => Promise.resolve({ success: true, expiresAt: null })),
-      isRunning: mock.fn(() => Promise.resolve(true)),
-      getStatus: mock.fn(() => Promise.resolve({ authenticated: true, email: null, expiresAt: null })),
-    };
-
-    const manager = new AuthManager(mockClient as never);
-
-    const token = await manager.getAccessToken();
-
-    assert.strictEqual(token, 'test-token-123');
-    assert.strictEqual(mockClient.getToken.mock.calls.length, 1);
+  test('getToken returns valid JWT when not expired', async () => {
+    const keychain = mockKeychain({
+      token: 'jwt',
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      email: 'a@b.com',
+      refreshToken: 'r',
+    });
+    const auth = createAuthManager({ keychain });
+    assert.strictEqual(await auth.getToken(), 'jwt');
   });
 
-  test('getAccessToken caches token for 30 seconds', async () => {
-    const mockClient = {
-      getToken: mock.fn(() => Promise.resolve({
-        token: 'test-token-123',
-        expiresAt: '2026-03-27T18:00:00.000Z',
-      })),
-      refresh: mock.fn(() => Promise.resolve({ success: true, expiresAt: null })),
-    };
-
-    const manager = new AuthManager(mockClient as never);
-
-    // First call
-    await manager.getAccessToken();
-    // Second call should use cache
-    await manager.getAccessToken();
-
-    assert.strictEqual(mockClient.getToken.mock.calls.length, 1);
-  });
-
-  test('getAccessToken throws when daemon not running', async () => {
-    const mockClient = {
-      getToken: mock.fn(() => Promise.reject(new Error('Auth daemon not running. Run `copilot-auth login` first.'))),
-      refresh: mock.fn(() => Promise.resolve({ success: false, expiresAt: null })),
-    };
-
-    const manager = new AuthManager(mockClient as never);
-
+  test('getToken throws TOKEN_EXPIRED when expired', async () => {
+    const keychain = mockKeychain({
+      token: 'jwt',
+      expiresAt: Date.now() - 1000,
+      email: 'a@b.com',
+      refreshToken: 'r',
+    });
+    const auth = createAuthManager({ keychain });
     await assert.rejects(
-      () => manager.getAccessToken(),
-      /daemon not running/i
+      () => auth.getToken(),
+      (err: Error) => (err as unknown as { code: string }).code === 'TOKEN_EXPIRED'
     );
   });
 
-  test('handleAuthError attempts refresh', async () => {
-    const mockClient = {
-      getToken: mock.fn(() => Promise.resolve({
-        token: 'refreshed-token',
-        expiresAt: '2026-03-27T19:00:00.000Z',
-      })),
-      refresh: mock.fn(() => Promise.resolve({ success: true, expiresAt: null })),
-    };
-
-    const manager = new AuthManager(mockClient as never);
-
-    const token = await manager.handleAuthError();
-
-    assert.strictEqual(mockClient.refresh.mock.calls.length, 1);
-    assert.strictEqual(token, 'refreshed-token');
+  test('getToken throws TOKEN_EXPIRED when within 60s buffer', async () => {
+    const keychain = mockKeychain({
+      token: 'jwt',
+      expiresAt: Date.now() + 30 * 1000,
+      email: 'a@b.com',
+      refreshToken: 'r',
+    });
+    const auth = createAuthManager({ keychain });
+    await assert.rejects(
+      () => auth.getToken(),
+      (err: Error) => (err as unknown as { code: string }).code === 'TOKEN_EXPIRED'
+    );
   });
 
-  test('ensureAuthenticated delegates to getAccessToken', async () => {
-    const mockClient = {
-      getToken: mock.fn(() => Promise.resolve({
-        token: 'test-token',
-        expiresAt: '2026-03-27T18:00:00.000Z',
-      })),
-      refresh: mock.fn(() => Promise.resolve({ success: true, expiresAt: null })),
-    };
+  test('getToken throws NOT_AUTHENTICATED when keychain empty', async () => {
+    const keychain = mockKeychain(null);
+    const auth = createAuthManager({ keychain });
+    await assert.rejects(
+      () => auth.getToken(),
+      (err: Error) => (err as unknown as { code: string }).code === 'NOT_AUTHENTICATED'
+    );
+  });
 
-    const manager = new AuthManager(mockClient as never);
+  test('setToken persists to keychain', async () => {
+    const keychain = mockKeychain(null);
+    const auth = createAuthManager({ keychain });
+    await auth.setToken({ token: 't', expiresAt: 1, email: 'e', refreshToken: 'r' });
+    assert.strictEqual(keychain.setToken.mock.calls.length, 1);
+  });
 
-    const token = await manager.ensureAuthenticated();
-
-    assert.strictEqual(token, 'test-token');
+  test('logout clears keychain', async () => {
+    const keychain = mockKeychain({
+      token: 'jwt',
+      expiresAt: Date.now() + 10000,
+      email: 'a@b.com',
+      refreshToken: 'r',
+    });
+    const auth = createAuthManager({ keychain });
+    await auth.logout();
+    assert.strictEqual(keychain.clearCredentials.mock.calls.length, 1);
   });
 });

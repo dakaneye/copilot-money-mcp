@@ -1,62 +1,59 @@
-import { SocketClient } from './socket.js';
 import { CopilotMoneyError } from '../types/error.js';
 
-const TOKEN_CACHE_TTL = 30 * 1000; // 30 seconds
+const TOKEN_EXPIRY_BUFFER_MS = 60 * 1000;
 
-export class AuthManager {
-  private cachedToken: string | null = null;
-  private cachedExpiry: number = 0;
-  private client: SocketClient;
-
-  constructor(socketClient?: SocketClient) {
-    this.client = socketClient ?? new SocketClient();
-  }
-
-  async getAccessToken(): Promise<string> {
-    // Return cached token if still valid
-    if (this.cachedToken && Date.now() < this.cachedExpiry) {
-      return this.cachedToken;
-    }
-
-    try {
-      const response = await this.client.getToken();
-      this.cachedToken = response.token;
-      this.cachedExpiry = Date.now() + TOKEN_CACHE_TTL;
-      return response.token;
-    } catch (error) {
-      throw new CopilotMoneyError(
-        'NOT_AUTHENTICATED',
-        error instanceof Error ? error.message : 'Failed to get token from auth daemon'
-      );
-    }
-  }
-
-  async ensureAuthenticated(): Promise<string> {
-    return this.getAccessToken();
-  }
-
-  async handleAuthError(): Promise<string> {
-    // Clear cache and try to refresh
-    this.cachedToken = null;
-    this.cachedExpiry = 0;
-
-    try {
-      await this.client.refresh();
-      return this.getAccessToken();
-    } catch {
-      throw new CopilotMoneyError(
-        'NOT_AUTHENTICATED',
-        "Session expired. Run 'copilot-auth login' to re-authenticate."
-      );
-    }
-  }
+export interface KeychainPort {
+  getToken(): Promise<{
+    token: string;
+    expiresAt: number;
+    email: string;
+    refreshToken: string;
+  } | null>;
+  setToken(v: {
+    token: string;
+    expiresAt: number;
+    email: string;
+    refreshToken: string;
+  }): Promise<void>;
+  clearCredentials(): Promise<void>;
 }
 
-let authManagerInstance: AuthManager | null = null;
+export interface AuthManager {
+  getToken(): Promise<string>;
+  setToken(v: {
+    token: string;
+    expiresAt: number;
+    email: string;
+    refreshToken: string;
+  }): Promise<void>;
+  logout(): Promise<void>;
+  getEmail(): Promise<string | null>;
+}
 
-export function getAuthManager(): AuthManager {
-  if (!authManagerInstance) {
-    authManagerInstance = new AuthManager();
-  }
-  return authManagerInstance;
+export function createAuthManager(deps: { keychain: KeychainPort }): AuthManager {
+  const { keychain } = deps;
+  return {
+    async getToken() {
+      const stored = await keychain.getToken();
+      if (!stored) {
+        throw new CopilotMoneyError(
+          'NOT_AUTHENTICATED',
+          'Not logged in. Run `copilot-auth login`.'
+        );
+      }
+      if (stored.expiresAt - TOKEN_EXPIRY_BUFFER_MS <= Date.now()) {
+        throw new CopilotMoneyError(
+          'TOKEN_EXPIRED',
+          'Authentication expired. Run `copilot-auth login` in your terminal, then retry.'
+        );
+      }
+      return stored.token;
+    },
+    setToken: (v) => keychain.setToken(v),
+    logout: () => keychain.clearCredentials(),
+    async getEmail() {
+      const stored = await keychain.getToken();
+      return stored?.email ?? null;
+    },
+  };
 }

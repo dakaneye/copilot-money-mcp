@@ -1,4 +1,4 @@
-export { getAuthManager, AuthManager } from './manager.js';
+export { createAuthManager, type AuthManager, type KeychainPort } from './manager.js';
 export {
   setToken,
   getToken,
