@@ -287,7 +287,7 @@ export function registerTools(
     getBudgetsInputSchema.shape,
     async () => {
       try {
-        const result = await getBudgets(client);
+        const result = await getBudgets(localStore);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
