@@ -465,7 +465,7 @@ export function registerTools(
     suggestCategoriesInputSchema.shape,
     async (args: SuggestCategoriesInput) => {
       try {
-        const result = await suggestCategories(client, args);
+        const result = await suggestCategories(localStore, args);
         return formatResult(result);
       } catch (error) {
         return formatError(error);

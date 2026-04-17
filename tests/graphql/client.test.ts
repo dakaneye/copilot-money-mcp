@@ -220,58 +220,8 @@ describe('GraphQLClient', () => {
     });
   });
 
-  describe('auth error retry', () => {
-    it('should retry with onAuthError callback on 401', async () => {
-      let tokenCallCount = 0;
-      const onAuthError = mock.fn(() => Promise.resolve('new-token'));
-
-      const getToken = mock.fn(() => {
-        tokenCallCount++;
-        return Promise.resolve(tokenCallCount === 1 ? 'old-token' : 'new-token');
-      });
-
-      const client = new GraphQLClient(getToken, onAuthError);
-
-      let fetchCallCount = 0;
-      globalThis.fetch = mock.fn(async () => {
-        fetchCallCount++;
-        if (fetchCallCount === 1) {
-          return new Response(JSON.stringify({}), { status: 401 });
-        }
-        return new Response(JSON.stringify({
-          data: { test: 'value' }
-        }), { status: 200 });
-      }) as unknown as typeof fetch;
-
-      const result = await client.query('Test', 'query { test }', {});
-      assert.deepStrictEqual(result, { test: 'value' });
-      assert.strictEqual(onAuthError.mock.callCount(), 1);
-    });
-
-    it('should retry with onAuthError callback on unauthenticated error', async () => {
-      const onAuthError = mock.fn(() => Promise.resolve('new-token'));
-
-      const client = new GraphQLClient(() => Promise.resolve('fake-token'), onAuthError);
-
-      let requestCount = 0;
-      globalThis.fetch = mock.fn(async () => {
-        requestCount++;
-        if (requestCount === 1) {
-          return new Response(JSON.stringify({
-            errors: [{ message: 'Unauthenticated' }]
-          }), { status: 200 });
-        }
-        return new Response(JSON.stringify({
-          data: { test: 'value' }
-        }), { status: 200 });
-      }) as unknown as typeof fetch;
-
-      const result = await client.query('Test', 'query { test }', {});
-      assert.deepStrictEqual(result, { test: 'value' });
-      assert.strictEqual((onAuthError.mock as unknown as { callCount: () => number }).callCount(), 1);
-    });
-
-    it('should not retry without onAuthError callback', async () => {
+  describe('auth error messages', () => {
+    it('should surface actionable copilot-auth login hint on TOKEN_EXPIRED', async () => {
       const client = new GraphQLClient(() => Promise.resolve('fake-token'));
 
       globalThis.fetch = mock.fn(() =>
@@ -285,7 +235,30 @@ describe('GraphQLClient', () => {
         (error: unknown) => {
           return (
             error instanceof CopilotMoneyError &&
-            error.code === 'TOKEN_EXPIRED'
+            error.code === 'TOKEN_EXPIRED' &&
+            error.message.includes('copilot-auth login')
+          );
+        }
+      );
+
+      const mockFetch = globalThis.fetch as unknown as { mock: { callCount: () => number } };
+      assert.strictEqual(mockFetch.mock.callCount(), 1);
+    });
+
+    it('should surface actionable copilot-auth login hint on 401 NOT_AUTHENTICATED', async () => {
+      const client = new GraphQLClient(() => Promise.resolve('fake-token'));
+
+      globalThis.fetch = mock.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({}), { status: 401 }))
+      ) as unknown as typeof fetch;
+
+      await assert.rejects(
+        () => client.query('Test', 'query { test }', {}),
+        (error: unknown) => {
+          return (
+            error instanceof CopilotMoneyError &&
+            error.code === 'NOT_AUTHENTICATED' &&
+            error.message.includes('copilot-auth login')
           );
         }
       );

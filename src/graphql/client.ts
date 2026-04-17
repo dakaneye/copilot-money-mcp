@@ -8,10 +8,7 @@ export interface GraphQLResponse<T = unknown> {
 }
 
 export class GraphQLClient {
-  constructor(
-    private getToken: () => Promise<string>,
-    private onAuthError?: () => Promise<string>
-  ) {}
+  constructor(private getToken: () => Promise<string>) {}
 
   async query<T>(
     operationName: string,
@@ -32,8 +29,7 @@ export class GraphQLClient {
   private async request<T>(
     operationName: string,
     query: string,
-    variables: Record<string, unknown>,
-    isRetry = false
+    variables: Record<string, unknown>
   ): Promise<T> {
     const token = await this.getToken();
 
@@ -52,13 +48,9 @@ export class GraphQLClient {
 
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
-        if (!isRetry && this.onAuthError) {
-          await this.onAuthError();
-          return this.request<T>(operationName, query, variables, true);
-        }
         throw new CopilotMoneyError(
           'NOT_AUTHENTICATED',
-          'Authentication failed. Please re-authenticate.'
+          'Authentication failed. Run `copilot-auth login` then retry.'
         );
       }
 
@@ -81,13 +73,9 @@ export class GraphQLClient {
     const json = await response.json() as GraphQLResponse<T>;
 
     if (this.isUnauthenticated(json)) {
-      if (!isRetry && this.onAuthError) {
-        await this.onAuthError();
-        return this.request<T>(operationName, query, variables, true);
-      }
       throw new CopilotMoneyError(
         'TOKEN_EXPIRED',
-        'Session expired. Please re-authenticate.'
+        'Session expired. Run `copilot-auth login` then retry.'
       );
     }
 

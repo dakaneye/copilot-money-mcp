@@ -60,10 +60,7 @@ async function main(): Promise<void> {
 
   const authManager = createAuthManager({ keychain: createKeychain() });
 
-  const graphqlClient = new GraphQLClient(
-    () => authManager.getToken(),
-    () => authManager.getToken()
-  );
+  const graphqlClient = new GraphQLClient(() => authManager.getToken());
 
   let localStore: LocalStore;
   try {
