@@ -83,6 +83,12 @@ export interface CacheStatus {
     budgets: CacheEntityStatus;
   };
   totalSizeBytes: number;
+  /**
+   * Diagnostic reason the cache is unavailable — populated only by the
+   * `cacheMissingStub` used when `createLocalStore` failed at server
+   * startup. Real `getCacheStatus` omits this field.
+   */
+  error?: string | null;
 }
 
 /** Default and only public shape of the LocalStore. */

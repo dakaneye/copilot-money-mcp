@@ -24,6 +24,7 @@ import {
 import { getTags, getTagsInputSchema, buildTagMap } from './tags.js';
 import { getRecurring, getRecurringInputSchema } from './recurring.js';
 import { getBudgets, getBudgetsInputSchema } from './budgets.js';
+import { getCacheStatus, getCacheStatusInputSchema } from './cache_status.js';
 
 // Write tools
 import {
@@ -288,6 +289,20 @@ export function registerTools(
     async () => {
       try {
         const result = await getBudgets(localStore);
+        return formatResult(result);
+      } catch (error) {
+        return formatError(error);
+      }
+    }
+  );
+
+  server.tool(
+    'get_cache_status',
+    'Get local Firestore cache metadata: path, per-entity counts, last-update timestamps, total size. Useful for diagnosing stale data or missing cache.',
+    getCacheStatusInputSchema.shape,
+    async () => {
+      try {
+        const result = await getCacheStatus(localStore);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
