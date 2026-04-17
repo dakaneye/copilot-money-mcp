@@ -2,7 +2,8 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { getAuthManager } from './auth/manager.js';
+import { createAuthManager } from './auth/manager.js';
+import { createKeychain } from './auth/keychain.js';
 import { GraphQLClient } from './graphql/client.js';
 import { registerTools } from './tools/index.js';
 
@@ -12,11 +13,11 @@ async function main(): Promise<void> {
     version: '2.0.0',
   });
 
-  const authManager = getAuthManager();
+  const authManager = createAuthManager({ keychain: createKeychain() });
 
   const graphqlClient = new GraphQLClient(
-    () => authManager.ensureAuthenticated(),
-    () => authManager.handleAuthError()
+    () => authManager.getToken(),
+    () => authManager.getToken()
   );
 
   registerTools(server, graphqlClient);
