@@ -1,6 +1,6 @@
 import { test, describe, mock } from 'node:test';
 import assert from 'node:assert';
-import { loginFlow, type LoginDeps } from '../src/cli.js';
+import { HELP_TEXT, loginFlow, type LoginDeps } from '../src/cli.js';
 
 function makeDeps() {
   const deps = {
@@ -104,5 +104,17 @@ describe('loginFlow', () => {
 
     const sendArgs = deps.firebaseRest.sendOobCode.mock.calls[0]?.arguments[0];
     assert.strictEqual(sendArgs?.email, 'a@b.com');
+  });
+});
+
+describe('HELP_TEXT', () => {
+  test('lists login, logout, status subcommands', () => {
+    assert.match(HELP_TEXT, /\blogin\b/);
+    assert.match(HELP_TEXT, /\blogout\b/);
+    assert.match(HELP_TEXT, /\bstatus\b/);
+  });
+
+  test('does not mention the removed daemon subcommand', () => {
+    assert.doesNotMatch(HELP_TEXT, /daemon/i);
   });
 });

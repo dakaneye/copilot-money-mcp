@@ -53,14 +53,16 @@ export async function loginFlow(deps: LoginDeps): Promise<void> {
   deps.print(`Logged in as ${result.email}. Token valid ~${minutes} min.`);
 }
 
-function printHelp(): void {
-  console.log(`Usage: copilot-auth <command>
+export const HELP_TEXT = `Usage: copilot-auth <command>
 
 Commands:
   login                 Authenticate via magic-link email
   logout                Clear stored credentials and tokens
   status                Show authentication status
-`);
+`;
+
+function printHelp(): void {
+  console.log(HELP_TEXT);
 }
 
 async function runLogin(): Promise<void> {
