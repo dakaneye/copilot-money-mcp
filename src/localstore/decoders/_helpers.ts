@@ -100,3 +100,30 @@ export function optionalBoolean(
   const js = FirestoreValue.toJs(raw);
   return isBoolean(js) ? js : null;
 }
+
+/**
+ * Read a `mapValue` field as a string -> number record.
+ *
+ * Returns `null` if the field is absent or not a map. Returns an empty object
+ * when the map exists but is empty. Non-numeric entries inside the map are
+ * silently dropped (mirrors the reference MCP's behavior for budget `amounts`
+ * — a mixed-type entry shouldn't poison the whole field).
+ *
+ * Amount may be `doubleValue` or `integerValue`; both coerce to JS number via
+ * `FirestoreValue.toJs`, so we just guard on `isNumber` after coercion.
+ *
+ * Required on this codebase today: Budget `amounts` map (Task 18).
+ */
+export function optionalNumberMap(
+  fields: Record<string, FirestoreValueShape>,
+  name: string
+): Record<string, number> | null {
+  const raw = fields[name];
+  if (!raw || !('mapValue' in raw)) return null;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw.mapValue.fields)) {
+    const js = FirestoreValue.toJs(v);
+    if (isNumber(js)) out[k] = js;
+  }
+  return out;
+}
