@@ -93,22 +93,19 @@ async function refreshCategoryCache(store: LocalStore): Promise<void> {
   categoryMap = buildCategoryMap(categoryCache.data);
 }
 
-async function refreshTagCache(client: GraphQLClient): Promise<void> {
-  tagCache.data = await getTags(client);
+async function refreshTagCache(store: LocalStore): Promise<void> {
+  tagCache.data = await getTags(store);
   tagCache.expiresAt = Date.now() + CACHE_TTL_MS;
   tagMap = buildTagMap(tagCache.data);
 }
 
-async function ensureCaches(
-  client: GraphQLClient,
-  store: LocalStore
-): Promise<void> {
+async function ensureCaches(store: LocalStore): Promise<void> {
   const refreshes: Promise<void>[] = [];
   if (!isCacheValid(categoryCache)) {
     refreshes.push(refreshCategoryCache(store));
   }
   if (!isCacheValid(tagCache)) {
-    refreshes.push(refreshTagCache(client));
+    refreshes.push(refreshTagCache(store));
   }
   if (refreshes.length > 0) {
     await Promise.all(refreshes);
@@ -226,7 +223,7 @@ export function registerTools(
     getTransactionsInputSchema.shape,
     async (args: GetTransactionsInput) => {
       try {
-        await ensureCaches(client, localStore);
+        await ensureCaches(localStore);
         const result = await getTransactions(client, args, categoryMap);
         return formatResult(result);
       } catch (error) {
@@ -271,7 +268,7 @@ export function registerTools(
     getTagsInputSchema.shape,
     async () => {
       try {
-        const result = await getTags(client);
+        const result = await getTags(localStore);
         tagCache = { data: result, expiresAt: Date.now() + CACHE_TTL_MS };
         tagMap = buildTagMap(result);
         return formatResult(result);
@@ -317,7 +314,7 @@ export function registerTools(
     categorizeTransactionInputSchema.shape,
     async (args: CategorizeTransactionInput) => {
       try {
-        await ensureCaches(client, localStore);
+        await ensureCaches(localStore);
         const transaction = await findTransaction(client, args.transaction_id);
         const result = await categorizeTransaction(
           client,
@@ -369,7 +366,7 @@ export function registerTools(
     tagTransactionInputSchema.shape,
     async (args: TagTransactionInput) => {
       try {
-        await ensureCaches(client, localStore);
+        await ensureCaches(localStore);
         const transaction = await findTransaction(client, args.transaction_id);
         const result = await tagTransaction(
           client,
@@ -391,7 +388,7 @@ export function registerTools(
     untagTransactionInputSchema.shape,
     async (args: UntagTransactionInput) => {
       try {
-        await ensureCaches(client, localStore);
+        await ensureCaches(localStore);
         const transaction = await findTransaction(client, args.transaction_id);
         const result = await untagTransaction(client, args, transaction, tagMap);
         return formatResult(result);
@@ -409,7 +406,7 @@ export function registerTools(
     bulkCategorizeInputSchema.shape,
     async (args: BulkCategorizeInput) => {
       try {
-        await ensureCaches(client, localStore);
+        await ensureCaches(localStore);
         const transactions = await findTransactions(client, args.transaction_ids);
         const result = await bulkCategorize(
           client,
@@ -431,7 +428,7 @@ export function registerTools(
     bulkTagInputSchema.shape,
     async (args: BulkTagInput) => {
       try {
-        await ensureCaches(client, localStore);
+        await ensureCaches(localStore);
         const transactions = await findTransactions(client, args.transaction_ids);
         const result = await bulkTag(client, args, transactions, tagMap, getTagNames());
         return formatResult(result);
