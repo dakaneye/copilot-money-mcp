@@ -1,6 +1,8 @@
 node_modules/
 dist/
 *.log
+# LevelDB fixture contains a .log file that stores the actual test data.
+!tests/fixtures/leveldb-sample/*.log
 .env
 .env.*
 .DS_Store
