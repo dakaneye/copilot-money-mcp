@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { GraphQLClient } from '../graphql/client.js';
+import type { LocalStore } from '../localstore/index.js';
 import type { Category, Tag, Transaction } from '../types/index.js';
 import type { TransactionsResponse } from '../types/responses.js';
 import { CopilotMoneyError } from '../types/error.js';
@@ -209,7 +210,11 @@ function formatError(
   };
 }
 
-export function registerTools(server: McpServer, client: GraphQLClient): void {
+export function registerTools(
+  server: McpServer,
+  client: GraphQLClient,
+  localStore: LocalStore
+): void {
   // READ TOOLS
 
   server.tool(
@@ -233,7 +238,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     getAccountsInputSchema.shape,
     async (args: GetAccountsInput) => {
       try {
-        const result = await getAccounts(client, args);
+        const result = await getAccounts(localStore, args);
         return formatResult(result);
       } catch (error) {
         return formatError(error);

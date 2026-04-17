@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import type { GraphQLClient } from '../graphql/client.js';
-import { ACCOUNTS_QUERY } from '../graphql/queries.js';
+import type { LocalStore } from '../localstore/index.js';
 import type { Account } from '../types/index.js';
 
 export const getAccountsInputSchema = z.object({
@@ -11,23 +10,12 @@ export const getAccountsInputSchema = z.object({
 
 export type GetAccountsInput = z.infer<typeof getAccountsInputSchema>;
 
-interface AccountsResponse {
-  accounts: Account[];
-}
-
 export async function getAccounts(
-  client: GraphQLClient,
+  store: LocalStore,
   input: GetAccountsInput
 ): Promise<Account[]> {
-  const response = await client.query<AccountsResponse>(
-    'Accounts',
-    ACCOUNTS_QUERY,
-    { filter: null }
-  );
-
-  let accounts = response.accounts.filter(
-    (a) => !a.isUserHidden && !a.isUserClosed
-  );
+  const all = await store.getAccounts();
+  let accounts = all.filter((a) => !a.isUserHidden && !a.isUserClosed);
 
   if (input.type) {
     accounts = accounts.filter((a) => a.type === input.type);
