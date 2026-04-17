@@ -273,7 +273,7 @@ export function registerTools(
     getRecurringInputSchema.shape,
     async () => {
       try {
-        const result = await getRecurring(client);
+        const result = await getRecurring(localStore);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
