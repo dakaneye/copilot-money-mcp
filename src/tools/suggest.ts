@@ -1,8 +1,6 @@
 import { z } from 'zod';
-import type { GraphQLClient } from '../graphql/client.js';
-import { TRANSACTIONS_QUERY, CATEGORIES_QUERY } from '../graphql/queries.js';
+import type { LocalStore } from '../localstore/index.js';
 import type { Transaction, Category } from '../types/index.js';
-import type { TransactionsResponse, CategoriesResponse } from '../types/responses.js';
 
 export const suggestCategoriesInputSchema = z.object({
   limit: z.number().optional().default(10).describe('Maximum suggestions to return'),
@@ -18,34 +16,20 @@ export interface CategorySuggestion {
 }
 
 export async function suggestCategories(
-  client: GraphQLClient,
+  store: LocalStore,
   input: SuggestCategoriesInput
 ): Promise<CategorySuggestion[]> {
-  // Fetch uncategorized transactions
-  const txnResponse = await client.query<TransactionsResponse>(
-    'Transactions',
-    TRANSACTIONS_QUERY,
-    {
-      first: input.limit * 2,
-      filter: {
-        categoryIds: [null],
-        isReviewed: false,
-      },
-      sort: [{ field: 'DATE', direction: 'DESC' }],
-    }
-  );
+  // Fetch a wider window than we need so filtering out categorized/reviewed
+  // transactions still leaves enough candidates to satisfy `limit`.
+  const [txns, categories] = await Promise.all([
+    store.getTransactions({ limit: Math.max(input.limit * 4, 200) }),
+    store.getCategories(),
+  ]);
 
-  const uncategorized = txnResponse.transactions.edges.map((e) => e.node);
-
-  // Fetch categories for name lookup
-  const catResponse = await client.query<CategoriesResponse>(
-    'Categories',
-    CATEGORIES_QUERY,
-    { spend: false, budget: false, rollovers: false }
-  );
+  const uncategorized = txns.filter((t) => t.categoryId === null && !t.isReviewed);
 
   const categoryById = new Map<string, Category>();
-  for (const cat of catResponse.categories) {
+  for (const cat of categories) {
     categoryById.set(cat.id, cat);
     for (const child of cat.childCategories || []) {
       categoryById.set(child.id, child);
@@ -73,7 +57,7 @@ export async function suggestCategories(
     }
 
     // Fallback: pattern matching on merchant name
-    const suggestion = matchByMerchantPattern(txn, catResponse.categories);
+    const suggestion = matchByMerchantPattern(txn, categories);
     if (suggestion) {
       suggestions.push({
         transaction: txn,
