@@ -1,24 +1,13 @@
 import { z } from 'zod';
-import type { GraphQLClient } from '../graphql/client.js';
-import { TAGS_QUERY } from '../graphql/queries.js';
+import type { LocalStore } from '../localstore/index.js';
 import type { Tag } from '../types/index.js';
 
 export const getTagsInputSchema = z.object({});
 
 export type GetTagsInput = z.infer<typeof getTagsInputSchema>;
 
-interface TagsResponse {
-  tags: Tag[];
-}
-
-export async function getTags(client: GraphQLClient): Promise<Tag[]> {
-  const response = await client.query<TagsResponse>(
-    'Tags',
-    TAGS_QUERY,
-    {}
-  );
-
-  return response.tags;
+export async function getTags(store: LocalStore): Promise<Tag[]> {
+  return store.getTags();
 }
 
 export function buildTagMap(tags: Tag[]): Map<string, string> {
