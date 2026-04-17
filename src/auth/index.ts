@@ -1,16 +1,11 @@
 export { getAuthManager, AuthManager } from './manager.js';
 export {
-  storeToken,
+  setToken,
   getToken,
   clearToken,
-  storeCredentials,
-  getCredentials,
   clearCredentials,
-  clearAll,
-  isTokenExpired,
   createKeychain,
   type StoredToken,
-  type StoredCredentials,
 } from './keychain.js';
 export {
   isPlaywrightAvailable,
