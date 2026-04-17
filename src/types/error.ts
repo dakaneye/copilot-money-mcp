@@ -7,7 +7,13 @@ export type ErrorCode =
   | 'RATE_LIMITED'
   | 'NETWORK_ERROR'
   | 'GRAPHQL_ERROR'
-  | 'PARTIAL_FAILURE';
+  | 'PARTIAL_FAILURE'
+  | 'LOCAL_CACHE_MISSING'
+  | 'LOCAL_CACHE_LOCKED'
+  | 'ENTITY_NOT_CACHED'
+  | 'OOB_CODE_INVALID'
+  | 'SEND_OOB_CODE_FAILED'
+  | 'CACHE_DECODE_ERROR';
 
 export interface McpError {
   code: ErrorCode;
