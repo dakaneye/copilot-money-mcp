@@ -1,9 +1,11 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
+import { Buffer } from 'node:buffer';
 import {
   COPILOT_FIREBASE_API_KEY,
   parseOobCodeFromUrl,
   sendOobCode,
+  signInWithEmailLink,
 } from '../../src/auth/firebaseRest.js';
 
 describe('parseOobCodeFromUrl', () => {
@@ -85,6 +87,70 @@ describe('sendOobCode', () => {
     };
     await assert.rejects(
       () => sendOobCode({ email: 'a@b.com', continueUrl: 'x' }, { fetch: fakeFetch }),
+      (err: Error) => (err as unknown as { code: string }).code === 'SEND_OOB_CODE_FAILED'
+    );
+  });
+});
+
+describe('signInWithEmailLink', () => {
+  function sampleJwt(expSecondsFromNow: number): string {
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + expSecondsFromNow, sub: 'uid' })
+    ).toString('base64url');
+    return `${header}.${payload}.sig`;
+  }
+
+  test('returns idToken, refreshToken, expiresAt on success', async () => {
+    const idToken = sampleJwt(3600);
+    const fakeFetch: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          idToken,
+          refreshToken: 'REFRESH',
+          localId: 'uid',
+          email: 'a@b.com',
+          expiresIn: '3600',
+        }),
+        { status: 200 }
+      );
+    const result = await signInWithEmailLink(
+      { email: 'a@b.com', oobCode: 'X' },
+      { fetch: fakeFetch }
+    );
+    assert.strictEqual(result.idToken, idToken);
+    assert.strictEqual(result.refreshToken, 'REFRESH');
+    assert.strictEqual(result.email, 'a@b.com');
+    assert.ok(result.expiresAt > Date.now());
+    assert.ok(result.expiresAt < Date.now() + 3601 * 1000);
+  });
+
+  test('throws OOB_CODE_INVALID on INVALID_OOB_CODE error', async () => {
+    const fakeFetch: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({ error: { message: 'INVALID_OOB_CODE' } }),
+        { status: 400 }
+      );
+    await assert.rejects(
+      () => signInWithEmailLink({ email: 'a@b.com', oobCode: 'X' }, { fetch: fakeFetch }),
+      (err: Error) => (err as unknown as { code: string }).code === 'OOB_CODE_INVALID'
+    );
+  });
+
+  test('throws OOB_CODE_INVALID on EXPIRED_OOB_CODE', async () => {
+    const fakeFetch: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: { message: 'EXPIRED_OOB_CODE' } }), { status: 400 });
+    await assert.rejects(
+      () => signInWithEmailLink({ email: 'a@b.com', oobCode: 'X' }, { fetch: fakeFetch }),
+      (err: Error) => (err as unknown as { code: string }).code === 'OOB_CODE_INVALID'
+    );
+  });
+
+  test('throws SEND_OOB_CODE_FAILED on other non-2xx', async () => {
+    const fakeFetch: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: { message: 'INTERNAL' } }), { status: 500 });
+    await assert.rejects(
+      () => signInWithEmailLink({ email: 'a@b.com', oobCode: 'X' }, { fetch: fakeFetch }),
       (err: Error) => (err as unknown as { code: string }).code === 'SEND_OOB_CODE_FAILED'
     );
   });
