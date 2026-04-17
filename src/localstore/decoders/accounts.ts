@@ -30,13 +30,17 @@
 
 import type { Account, AccountType } from '../../types/account.js';
 import { CopilotMoneyError } from '../../types/error.js';
+import type { FirestoreDocument } from '../protobuf.js';
 import {
-  FirestoreValue,
-  type FirestoreDocument,
-  type FirestoreValueShape,
-} from '../protobuf.js';
+  optionalBoolean,
+  optionalNumber,
+  optionalString,
+  requireNumber,
+  requireString,
+} from './_helpers.js';
 
 const KEY_PATTERN = /^items\/([^/]+)\/accounts\/([^/]+)$/;
+const ENTITY_KIND = 'Account';
 
 function parseKey(key: string): { itemId: string; accountId: string } {
   const match = KEY_PATTERN.exec(key);
@@ -47,85 +51,6 @@ function parseKey(key: string): { itemId: string; accountId: string } {
     );
   }
   return { itemId: match[1], accountId: match[2] };
-}
-
-const isString = (v: unknown): v is string => typeof v === 'string';
-const isNumber = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isFinite(v);
-const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean';
-
-function requireString(
-  fields: Record<string, FirestoreValueShape>,
-  name: string,
-  accountId: string
-): string {
-  const raw = fields[name];
-  if (!raw) {
-    throw new CopilotMoneyError(
-      'CACHE_DECODE_ERROR',
-      `Account ${accountId} missing required field: ${name}`
-    );
-  }
-  const js = FirestoreValue.toJs(raw);
-  if (!isString(js)) {
-    throw new CopilotMoneyError(
-      'CACHE_DECODE_ERROR',
-      `Account ${accountId} field ${name} is not a string`
-    );
-  }
-  return js;
-}
-
-function requireNumber(
-  fields: Record<string, FirestoreValueShape>,
-  name: string,
-  accountId: string
-): number {
-  const raw = fields[name];
-  if (!raw) {
-    throw new CopilotMoneyError(
-      'CACHE_DECODE_ERROR',
-      `Account ${accountId} missing required field: ${name}`
-    );
-  }
-  const js = FirestoreValue.toJs(raw);
-  if (!isNumber(js)) {
-    throw new CopilotMoneyError(
-      'CACHE_DECODE_ERROR',
-      `Account ${accountId} field ${name} is not a number`
-    );
-  }
-  return js;
-}
-
-function optionalString(
-  fields: Record<string, FirestoreValueShape>,
-  name: string
-): string | null {
-  const raw = fields[name];
-  if (!raw) return null;
-  const js = FirestoreValue.toJs(raw);
-  return isString(js) ? js : null;
-}
-
-function optionalNumber(
-  fields: Record<string, FirestoreValueShape>,
-  name: string
-): number | null {
-  const raw = fields[name];
-  if (!raw) return null;
-  const js = FirestoreValue.toJs(raw);
-  return isNumber(js) ? js : null;
-}
-
-function optionalBoolean(
-  fields: Record<string, FirestoreValueShape>,
-  name: string
-): boolean | null {
-  const raw = fields[name];
-  if (!raw) return null;
-  const js = FirestoreValue.toJs(raw);
-  return isBoolean(js) ? js : null;
 }
 
 /**
@@ -150,8 +75,8 @@ export function decodeAccount(key: string, doc: FirestoreDocument): Account {
   const { itemId, accountId } = parseKey(key);
   const f = doc.fields;
 
-  const name = requireString(f, 'name', accountId);
-  const balance = requireNumber(f, 'current_balance', accountId);
+  const name = requireString(f, 'name', ENTITY_KIND, accountId);
+  const balance = requireNumber(f, 'current_balance', ENTITY_KIND, accountId);
 
   const rawType = optionalString(f, 'type');
   const subType = optionalString(f, 'subtype');
