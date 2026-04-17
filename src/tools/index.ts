@@ -2,9 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { GraphQLClient } from '../graphql/client.js';
 import type { LocalStore } from '../localstore/index.js';
 import type { Category, Tag, Transaction } from '../types/index.js';
-import type { TransactionsResponse } from '../types/responses.js';
 import { CopilotMoneyError } from '../types/error.js';
-import { TRANSACTIONS_QUERY } from '../graphql/queries.js';
 
 // Read tools
 import {
@@ -121,32 +119,23 @@ function getTagNames(): string[] {
 }
 
 async function fetchRecentTransactions(
-  client: GraphQLClient,
+  store: LocalStore,
   limit: number = 200
 ): Promise<Transaction[]> {
-  const response = await client.query<TransactionsResponse>(
-    'Transactions',
-    TRANSACTIONS_QUERY,
-    {
-      first: limit,
-      filter: null,
-      sort: [{ field: 'DATE', direction: 'DESC' }],
-    }
-  );
-  return response.transactions.edges.map((e) => e.node);
+  return store.getTransactions({ limit });
 }
 
 async function findTransaction(
-  client: GraphQLClient,
+  store: LocalStore,
   transactionId: string
 ): Promise<Transaction> {
-  const transactions = await fetchRecentTransactions(client, 100);
+  const transactions = await fetchRecentTransactions(store, 100);
   const txn = transactions.find((t) => t.id === transactionId);
 
   if (!txn) {
     throw new CopilotMoneyError(
       'TRANSACTION_NOT_FOUND',
-      `Transaction ${transactionId} not found. Only the 100 most recent transactions are searchable.`
+      `Transaction ${transactionId} not found in local cache. Only the 100 most recent transactions are searchable; open the Copilot Money app if you need newer data.`
     );
   }
 
@@ -154,10 +143,10 @@ async function findTransaction(
 }
 
 async function findTransactions(
-  client: GraphQLClient,
+  store: LocalStore,
   transactionIds: string[]
 ): Promise<Transaction[]> {
-  const allTransactions = await fetchRecentTransactions(client, 200);
+  const allTransactions = await fetchRecentTransactions(store, 200);
   const found: Transaction[] = [];
   const notFound: string[] = [];
 
@@ -173,7 +162,7 @@ async function findTransactions(
   if (notFound.length > 0) {
     throw new CopilotMoneyError(
       'TRANSACTION_NOT_FOUND',
-      `Transactions not found: ${notFound.join(', ')}. Only the 200 most recent transactions are searchable.`
+      `Transactions not found in local cache: ${notFound.join(', ')}. Only the 200 most recent transactions are searchable; open the Copilot Money app if you need newer data.`
     );
   }
 
@@ -224,7 +213,7 @@ export function registerTools(
     async (args: GetTransactionsInput) => {
       try {
         await ensureCaches(localStore);
-        const result = await getTransactions(client, args, categoryMap);
+        const result = await getTransactions(localStore, args, categoryMap);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -315,7 +304,7 @@ export function registerTools(
     async (args: CategorizeTransactionInput) => {
       try {
         await ensureCaches(localStore);
-        const transaction = await findTransaction(client, args.transaction_id);
+        const transaction = await findTransaction(localStore, args.transaction_id);
         const result = await categorizeTransaction(
           client,
           args,
@@ -336,7 +325,7 @@ export function registerTools(
     reviewTransactionInputSchema.shape,
     async (args: ReviewTransactionInput) => {
       try {
-        const transaction = await findTransaction(client, args.transaction_id);
+        const transaction = await findTransaction(localStore, args.transaction_id);
         const result = await reviewTransaction(client, transaction);
         return formatResult(result);
       } catch (error) {
@@ -351,7 +340,7 @@ export function registerTools(
     unreviewTransactionInputSchema.shape,
     async (args: UnreviewTransactionInput) => {
       try {
-        const transaction = await findTransaction(client, args.transaction_id);
+        const transaction = await findTransaction(localStore, args.transaction_id);
         const result = await unreviewTransaction(client, transaction);
         return formatResult(result);
       } catch (error) {
@@ -367,7 +356,7 @@ export function registerTools(
     async (args: TagTransactionInput) => {
       try {
         await ensureCaches(localStore);
-        const transaction = await findTransaction(client, args.transaction_id);
+        const transaction = await findTransaction(localStore, args.transaction_id);
         const result = await tagTransaction(
           client,
           args,
@@ -389,7 +378,7 @@ export function registerTools(
     async (args: UntagTransactionInput) => {
       try {
         await ensureCaches(localStore);
-        const transaction = await findTransaction(client, args.transaction_id);
+        const transaction = await findTransaction(localStore, args.transaction_id);
         const result = await untagTransaction(client, args, transaction, tagMap);
         return formatResult(result);
       } catch (error) {
@@ -407,7 +396,7 @@ export function registerTools(
     async (args: BulkCategorizeInput) => {
       try {
         await ensureCaches(localStore);
-        const transactions = await findTransactions(client, args.transaction_ids);
+        const transactions = await findTransactions(localStore, args.transaction_ids);
         const result = await bulkCategorize(
           client,
           args,
@@ -429,7 +418,7 @@ export function registerTools(
     async (args: BulkTagInput) => {
       try {
         await ensureCaches(localStore);
-        const transactions = await findTransactions(client, args.transaction_ids);
+        const transactions = await findTransactions(localStore, args.transaction_ids);
         const result = await bulkTag(client, args, transactions, tagMap, getTagNames());
         return formatResult(result);
       } catch (error) {
@@ -444,7 +433,7 @@ export function registerTools(
     bulkReviewInputSchema.shape,
     async (args: BulkReviewInput) => {
       try {
-        const transactions = await findTransactions(client, args.transaction_ids);
+        const transactions = await findTransactions(localStore, args.transaction_ids);
         const result = await bulkReview(client, args, transactions);
         return formatResult(result);
       } catch (error) {
