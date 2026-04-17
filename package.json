@@ -48,8 +48,5 @@
     "eslint": "^10.1.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.57.3-alpha.3"
-  },
-  "optionalDependencies": {
-    "playwright": "^1.58.2"
   }
 }
