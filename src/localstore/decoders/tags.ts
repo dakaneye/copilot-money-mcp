@@ -5,29 +5,23 @@
  * its LevelDB key path (`users/{user_id}/tags/{tag_id}`) and produces our
  * `Tag` shape.
  *
- * UNVERIFIED: this user's Firestore cache currently contains zero tag
- * documents, so we cannot round-trip a real `tag.hex` fixture. The field-name
- * mapping below is taken from the reference MCP's tag processor
- * (ignaciohermosillacornejo/copilot-money-mcp, src/core/decoder.ts
- * `processTag` — string fields: `name`, `color_name`, `hex_color`). When the
- * first real tag document appears in the cache, spot-check these field names
- * against the raw doc and promote this comment to "verified".
- *
  *   Firestore field   -> Tag property
  *   ---------------     -----------------------------
  *   (from key path)   -> id
- *   name              -> name
- *   color_name        -> colorName  (palette token, e.g. "PURPLE2", "OLIVE1")
+ *   name              -> name (required)
+ *   color_name        -> colorName  (palette token, e.g. "green10")
+ *   hex_color         -> colorName fallback when color_name is absent
  *
- * Unmapped Firestore fields (for future decoders/handlers):
- *   - `hex_color`     hex string (e.g. "#EC5602") — our Tag type surfaces
- *                     only the palette token `colorName`, matching GraphQL.
+ * Older tag documents (created before Copilot's palette-token migration) only
+ * carry `hex_color` (e.g. "#42AF25FF"). Newer tags carry both. We prefer
+ * the palette token but fall back to the hex string so older tags don't fail
+ * to decode. If neither field is present, `colorName` is an empty string.
  */
 
 import type { Tag } from '../../types/tag.js';
 import { CopilotMoneyError } from '../../types/error.js';
 import type { FirestoreDocument } from '../protobuf.js';
-import { requireString } from './_helpers.js';
+import { requireString, optionalString } from './_helpers.js';
 
 const KEY_PATTERN = /^users\/([^/]+)\/tags\/([^/]+)$/;
 const ENTITY_KIND = 'Tag';
@@ -48,7 +42,7 @@ export function decodeTag(key: string, doc: FirestoreDocument): Tag {
   const f = doc.fields;
 
   const name = requireString(f, 'name', ENTITY_KIND, tagId);
-  const colorName = requireString(f, 'color_name', ENTITY_KIND, tagId);
+  const colorName = optionalString(f, 'color_name') ?? optionalString(f, 'hex_color') ?? '';
 
   return {
     id: tagId,

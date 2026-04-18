@@ -1,12 +1,10 @@
 /**
  * Tag decoder tests.
  *
- * UNVERIFIED FIELD NAMES: this user's Firestore cache has no tag documents,
- * so there is no committed `tag.hex` fixture. All inputs here are synthetic
- * `FirestoreDocument` objects constructed to match the field names the
- * reference MCP observes in real caches (`name`, `color_name`). When the
- * first real tag document appears, spot-check the decoder's mapping against
- * it and keep or revise these tests accordingly.
+ * Field-name behavior verified against real tag documents: newer tags carry
+ * `color_name` (palette token) and `hex_color` (hex string); older tags only
+ * have `hex_color`. The decoder prefers `color_name`, falls back to
+ * `hex_color`, and uses an empty string if neither is present.
  */
 
 import { test, describe } from 'node:test';
@@ -30,7 +28,7 @@ describe('decodeTag', () => {
     assert.strictEqual(tag.colorName, 'PURPLE2');
   });
 
-  test('ignores extra Firestore fields (e.g. hex_color)', () => {
+  test('prefers color_name over hex_color when both present', () => {
     const doc: FirestoreDocument = {
       fields: {
         name: { stringValue: 'business' },
@@ -42,22 +40,31 @@ describe('decodeTag', () => {
     assert.strictEqual(tag.colorName, 'OLIVE1');
   });
 
+  test('falls back to hex_color when color_name is absent (older tags)', () => {
+    const doc: FirestoreDocument = {
+      fields: {
+        name: { stringValue: 'Panama2024' },
+        hex_color: { stringValue: '#F1D730FF' },
+      },
+    };
+    const tag = decodeTag('users/U/tags/T', doc);
+    assert.strictEqual(tag.colorName, '#F1D730FF');
+  });
+
+  test('returns empty colorName when both color_name and hex_color absent', () => {
+    const doc: FirestoreDocument = {
+      fields: {
+        name: { stringValue: 'orphan' },
+      },
+    };
+    const tag = decodeTag('users/U/tags/T', doc);
+    assert.strictEqual(tag.colorName, '');
+  });
+
   test('throws CACHE_DECODE_ERROR if name is missing', () => {
     const doc: FirestoreDocument = {
       fields: {
         color_name: { stringValue: 'PURPLE2' },
-      },
-    };
-    assert.throws(
-      () => decodeTag('users/U/tags/T', doc),
-      (err: Error) => (err as unknown as { code: string }).code === 'CACHE_DECODE_ERROR'
-    );
-  });
-
-  test('throws CACHE_DECODE_ERROR if color_name is missing', () => {
-    const doc: FirestoreDocument = {
-      fields: {
-        name: { stringValue: 'vacation' },
       },
     };
     assert.throws(
