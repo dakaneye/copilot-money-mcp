@@ -1,9 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { GraphQLClient } from '../graphql/client.js';
-import type { Category, Tag, Transaction } from '../types/index.js';
-import type { TransactionsResponse } from '../types/responses.js';
+import type { LocalStore } from '../localstore/index.js';
+import type { Transaction } from '../types/index.js';
 import { CopilotMoneyError } from '../types/error.js';
-import { TRANSACTIONS_QUERY } from '../graphql/queries.js';
 
 // Read tools
 import {
@@ -25,6 +24,7 @@ import {
 import { getTags, getTagsInputSchema, buildTagMap } from './tags.js';
 import { getRecurring, getRecurringInputSchema } from './recurring.js';
 import { getBudgets, getBudgetsInputSchema } from './budgets.js';
+import { getCacheStatus, getCacheStatusInputSchema } from './cache_status.js';
 
 // Write tools
 import {
@@ -69,83 +69,51 @@ import {
   type SuggestCategoriesInput,
 } from './suggest.js';
 
-// Cache with TTL
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-interface Cache<T> {
-  data: T | null;
-  expiresAt: number;
+// Per-request category / tag context loaders.
+//
+// Reads go through the LocalStore, which memoizes for the lifetime of the
+// instance, so there's no need for an additional TTL cache here. Each
+// write-tool handler that needs to resolve a user-provided name into an ID
+// (and surface valid names as `suggestions` on INVALID_* errors) loads a
+// fresh map + name list at the top of the request.
+async function loadCategoryContext(
+  store: LocalStore
+): Promise<{ map: Map<string, string>; names: string[] }> {
+  const categories = await getCategories(store, {});
+  return {
+    map: buildCategoryMap(categories),
+    names: categories.map((c) => c.name),
+  };
 }
 
-let categoryCache: Cache<Category[]> = { data: null, expiresAt: 0 };
-let tagCache: Cache<Tag[]> = { data: null, expiresAt: 0 };
-let categoryMap: Map<string, string> = new Map();
-let tagMap: Map<string, string> = new Map();
-
-function isCacheValid<T>(cache: Cache<T>): cache is Cache<T> & { data: T } {
-  return cache.data !== null && Date.now() < cache.expiresAt;
-}
-
-async function refreshCategoryCache(client: GraphQLClient): Promise<void> {
-  categoryCache.data = await getCategories(client, {});
-  categoryCache.expiresAt = Date.now() + CACHE_TTL_MS;
-  categoryMap = buildCategoryMap(categoryCache.data);
-}
-
-async function refreshTagCache(client: GraphQLClient): Promise<void> {
-  tagCache.data = await getTags(client);
-  tagCache.expiresAt = Date.now() + CACHE_TTL_MS;
-  tagMap = buildTagMap(tagCache.data);
-}
-
-async function ensureCaches(client: GraphQLClient): Promise<void> {
-  const refreshes: Promise<void>[] = [];
-  if (!isCacheValid(categoryCache)) {
-    refreshes.push(refreshCategoryCache(client));
-  }
-  if (!isCacheValid(tagCache)) {
-    refreshes.push(refreshTagCache(client));
-  }
-  if (refreshes.length > 0) {
-    await Promise.all(refreshes);
-  }
-}
-
-function getCategoryNames(): string[] {
-  return categoryCache.data?.map((c) => c.name) ?? [];
-}
-
-function getTagNames(): string[] {
-  return tagCache.data?.map((t) => t.name) ?? [];
+async function loadTagContext(
+  store: LocalStore
+): Promise<{ map: Map<string, string>; names: string[] }> {
+  const tags = await getTags(store);
+  return {
+    map: buildTagMap(tags),
+    names: tags.map((t) => t.name),
+  };
 }
 
 async function fetchRecentTransactions(
-  client: GraphQLClient,
+  store: LocalStore,
   limit: number = 200
 ): Promise<Transaction[]> {
-  const response = await client.query<TransactionsResponse>(
-    'Transactions',
-    TRANSACTIONS_QUERY,
-    {
-      first: limit,
-      filter: null,
-      sort: [{ field: 'DATE', direction: 'DESC' }],
-    }
-  );
-  return response.transactions.edges.map((e) => e.node);
+  return store.getTransactions({ limit });
 }
 
 async function findTransaction(
-  client: GraphQLClient,
+  store: LocalStore,
   transactionId: string
 ): Promise<Transaction> {
-  const transactions = await fetchRecentTransactions(client, 100);
+  const transactions = await fetchRecentTransactions(store, 100);
   const txn = transactions.find((t) => t.id === transactionId);
 
   if (!txn) {
     throw new CopilotMoneyError(
       'TRANSACTION_NOT_FOUND',
-      `Transaction ${transactionId} not found. Only the 100 most recent transactions are searchable.`
+      `Transaction ${transactionId} not found in local cache. Only the 100 most recent transactions are searchable; open the Copilot Money app if you need newer data.`
     );
   }
 
@@ -153,10 +121,10 @@ async function findTransaction(
 }
 
 async function findTransactions(
-  client: GraphQLClient,
+  store: LocalStore,
   transactionIds: string[]
 ): Promise<Transaction[]> {
-  const allTransactions = await fetchRecentTransactions(client, 200);
+  const allTransactions = await fetchRecentTransactions(store, 200);
   const found: Transaction[] = [];
   const notFound: string[] = [];
 
@@ -172,7 +140,7 @@ async function findTransactions(
   if (notFound.length > 0) {
     throw new CopilotMoneyError(
       'TRANSACTION_NOT_FOUND',
-      `Transactions not found: ${notFound.join(', ')}. Only the 200 most recent transactions are searchable.`
+      `Transactions not found in local cache: ${notFound.join(', ')}. Only the 200 most recent transactions are searchable; open the Copilot Money app if you need newer data.`
     );
   }
 
@@ -209,7 +177,11 @@ function formatError(
   };
 }
 
-export function registerTools(server: McpServer, client: GraphQLClient): void {
+export function registerTools(
+  server: McpServer,
+  client: GraphQLClient,
+  localStore: LocalStore
+): void {
   // READ TOOLS
 
   server.tool(
@@ -218,8 +190,8 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     getTransactionsInputSchema.shape,
     async (args: GetTransactionsInput) => {
       try {
-        await ensureCaches(client);
-        const result = await getTransactions(client, args, categoryMap);
+        const { map: categoryMap } = await loadCategoryContext(localStore);
+        const result = await getTransactions(localStore, args, categoryMap);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -233,7 +205,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     getAccountsInputSchema.shape,
     async (args: GetAccountsInput) => {
       try {
-        const result = await getAccounts(client, args);
+        const result = await getAccounts(localStore, args);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -247,9 +219,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     getCategoriesInputSchema.shape,
     async (args: GetCategoriesInput) => {
       try {
-        const result = await getCategories(client, args);
-        categoryCache = { data: result, expiresAt: Date.now() + CACHE_TTL_MS };
-        categoryMap = buildCategoryMap(result);
+        const result = await getCategories(localStore, args);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -263,9 +233,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     getTagsInputSchema.shape,
     async () => {
       try {
-        const result = await getTags(client);
-        tagCache = { data: result, expiresAt: Date.now() + CACHE_TTL_MS };
-        tagMap = buildTagMap(result);
+        const result = await getTags(localStore);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -279,7 +247,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     getRecurringInputSchema.shape,
     async () => {
       try {
-        const result = await getRecurring(client);
+        const result = await getRecurring(localStore);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -293,7 +261,21 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     getBudgetsInputSchema.shape,
     async () => {
       try {
-        const result = await getBudgets(client);
+        const result = await getBudgets(localStore);
+        return formatResult(result);
+      } catch (error) {
+        return formatError(error);
+      }
+    }
+  );
+
+  server.tool(
+    'get_cache_status',
+    'Get local Firestore cache metadata: path, per-entity counts, last-update timestamps, total size. Useful for diagnosing stale data or missing cache.',
+    getCacheStatusInputSchema.shape,
+    async () => {
+      try {
+        const result = await getCacheStatus(localStore);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -309,14 +291,17 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     categorizeTransactionInputSchema.shape,
     async (args: CategorizeTransactionInput) => {
       try {
-        await ensureCaches(client);
-        const transaction = await findTransaction(client, args.transaction_id);
+        const [{ map: categoryMap, names: categoryNames }, transaction] =
+          await Promise.all([
+            loadCategoryContext(localStore),
+            findTransaction(localStore, args.transaction_id),
+          ]);
         const result = await categorizeTransaction(
           client,
           args,
           transaction,
           categoryMap,
-          getCategoryNames()
+          categoryNames
         );
         return formatResult(result);
       } catch (error) {
@@ -331,7 +316,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     reviewTransactionInputSchema.shape,
     async (args: ReviewTransactionInput) => {
       try {
-        const transaction = await findTransaction(client, args.transaction_id);
+        const transaction = await findTransaction(localStore, args.transaction_id);
         const result = await reviewTransaction(client, transaction);
         return formatResult(result);
       } catch (error) {
@@ -346,7 +331,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     unreviewTransactionInputSchema.shape,
     async (args: UnreviewTransactionInput) => {
       try {
-        const transaction = await findTransaction(client, args.transaction_id);
+        const transaction = await findTransaction(localStore, args.transaction_id);
         const result = await unreviewTransaction(client, transaction);
         return formatResult(result);
       } catch (error) {
@@ -361,14 +346,16 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     tagTransactionInputSchema.shape,
     async (args: TagTransactionInput) => {
       try {
-        await ensureCaches(client);
-        const transaction = await findTransaction(client, args.transaction_id);
+        const [{ map: tagMap, names: tagNames }, transaction] = await Promise.all([
+          loadTagContext(localStore),
+          findTransaction(localStore, args.transaction_id),
+        ]);
         const result = await tagTransaction(
           client,
           args,
           transaction,
           tagMap,
-          getTagNames()
+          tagNames
         );
         return formatResult(result);
       } catch (error) {
@@ -383,8 +370,10 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     untagTransactionInputSchema.shape,
     async (args: UntagTransactionInput) => {
       try {
-        await ensureCaches(client);
-        const transaction = await findTransaction(client, args.transaction_id);
+        const [{ map: tagMap }, transaction] = await Promise.all([
+          loadTagContext(localStore),
+          findTransaction(localStore, args.transaction_id),
+        ]);
         const result = await untagTransaction(client, args, transaction, tagMap);
         return formatResult(result);
       } catch (error) {
@@ -401,14 +390,17 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     bulkCategorizeInputSchema.shape,
     async (args: BulkCategorizeInput) => {
       try {
-        await ensureCaches(client);
-        const transactions = await findTransactions(client, args.transaction_ids);
+        const [{ map: categoryMap, names: categoryNames }, transactions] =
+          await Promise.all([
+            loadCategoryContext(localStore),
+            findTransactions(localStore, args.transaction_ids),
+          ]);
         const result = await bulkCategorize(
           client,
           args,
           transactions,
           categoryMap,
-          getCategoryNames()
+          categoryNames
         );
         return formatResult(result);
       } catch (error) {
@@ -423,9 +415,11 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     bulkTagInputSchema.shape,
     async (args: BulkTagInput) => {
       try {
-        await ensureCaches(client);
-        const transactions = await findTransactions(client, args.transaction_ids);
-        const result = await bulkTag(client, args, transactions, tagMap, getTagNames());
+        const [{ map: tagMap, names: tagNames }, transactions] = await Promise.all([
+          loadTagContext(localStore),
+          findTransactions(localStore, args.transaction_ids),
+        ]);
+        const result = await bulkTag(client, args, transactions, tagMap, tagNames);
         return formatResult(result);
       } catch (error) {
         return formatError(error);
@@ -439,7 +433,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     bulkReviewInputSchema.shape,
     async (args: BulkReviewInput) => {
       try {
-        const transactions = await findTransactions(client, args.transaction_ids);
+        const transactions = await findTransactions(localStore, args.transaction_ids);
         const result = await bulkReview(client, args, transactions);
         return formatResult(result);
       } catch (error) {
@@ -456,7 +450,7 @@ export function registerTools(server: McpServer, client: GraphQLClient): void {
     suggestCategoriesInputSchema.shape,
     async (args: SuggestCategoriesInput) => {
       try {
-        const result = await suggestCategories(client, args);
+        const result = await suggestCategories(localStore, args);
         return formatResult(result);
       } catch (error) {
         return formatError(error);

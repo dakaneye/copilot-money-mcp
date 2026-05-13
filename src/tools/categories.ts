@@ -1,39 +1,25 @@
 import { z } from 'zod';
-import type { GraphQLClient } from '../graphql/client.js';
-import { CATEGORIES_QUERY } from '../graphql/queries.js';
+import type { LocalStore } from '../localstore/index.js';
 import type { Category } from '../types/index.js';
-import type { CategoriesResponse } from '../types/responses.js';
 
 export const getCategoriesInputSchema = z.object({
-  include_spending: z.boolean().optional().describe('Include current spending totals'),
+  include_spending: z
+    .boolean()
+    .optional()
+    .describe('Include current spending totals (ignored for local-cache reads)'),
 });
 
 export type GetCategoriesInput = z.infer<typeof getCategoriesInputSchema>;
 
 export async function getCategories(
-  client: GraphQLClient,
-  input: GetCategoriesInput
+  store: LocalStore,
+  _input: GetCategoriesInput
 ): Promise<Category[]> {
-  const response = await client.query<CategoriesResponse>(
-    'Categories',
-    CATEGORIES_QUERY,
-    {
-      spend: input.include_spending ?? false,
-      budget: false,
-      rollovers: false,
-    }
-  );
-
-  // Flatten categories including children
-  const allCategories: Category[] = [];
-  for (const cat of response.categories) {
-    allCategories.push(cat);
-    if (cat.childCategories) {
-      allCategories.push(...cat.childCategories);
-    }
-  }
-
-  return allCategories;
+  // `include_spending` is a no-op on local-cache reads — spend aggregates live
+  // in other Firestore collections that aren't wired into the LocalStore facade
+  // (Phase 2 scope). The flag stays on the input schema for forward/backward
+  // compatibility but is intentionally ignored here.
+  return store.getCategories();
 }
 
 export function buildCategoryMap(categories: Category[]): Map<string, string> {

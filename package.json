@@ -1,6 +1,6 @@
 {
   "name": "@dakaneye-js/copilot-money-mcp",
-  "version": "2.0.3",
+  "version": "3.0.0",
   "description": "MCP server for Copilot Money with read/write capabilities",
   "type": "module",
   "main": "dist/server.js",
@@ -38,6 +38,7 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "classic-level": "^3.0.0",
     "keytar": "^7.9.0",
     "zod": "^4.3.6"
   },
@@ -47,8 +48,5 @@
     "eslint": "^10.1.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.57.3-alpha.3"
-  },
-  "optionalDependencies": {
-    "playwright": "^1.58.2"
   }
 }

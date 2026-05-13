@@ -8,7 +8,7 @@ async function createKeychainWithMock(mockKeytar: KeychainDeps) {
 }
 
 describe('keychain - token storage', () => {
-  test('storeToken saves token as JSON', async () => {
+  test('setToken saves 4-field token as JSON under account "token"', async () => {
     const mockKeytar = {
       setPassword: mock.fn(() => Promise.resolve()),
       getPassword: mock.fn(() => Promise.resolve(null)),
@@ -16,7 +16,12 @@ describe('keychain - token storage', () => {
     };
 
     const keychain = await createKeychainWithMock(mockKeytar);
-    await keychain.storeToken({ token: 'abc123', expiresAt: 1711562400000 });
+    await keychain.setToken({
+      token: 'abc123',
+      expiresAt: 1711562400000,
+      email: 'test@example.com',
+      refreshToken: 'refresh-xyz',
+    });
 
     assert.strictEqual(mockKeytar.setPassword.mock.callCount(), 1);
     const args = mockKeytar.setPassword.mock.calls[0]?.arguments ?? [];
@@ -26,10 +31,17 @@ describe('keychain - token storage', () => {
     const parsed = JSON.parse(value);
     assert.strictEqual(parsed.token, 'abc123');
     assert.strictEqual(parsed.expiresAt, 1711562400000);
+    assert.strictEqual(parsed.email, 'test@example.com');
+    assert.strictEqual(parsed.refreshToken, 'refresh-xyz');
   });
 
-  test('getToken returns parsed token', async () => {
-    const storedValue = JSON.stringify({ token: 'xyz789', expiresAt: 1711562400000 });
+  test('getToken returns the full 4-field shape', async () => {
+    const storedValue = JSON.stringify({
+      token: 'xyz789',
+      expiresAt: 1711562400000,
+      email: 'me@example.com',
+      refreshToken: 'rt-42',
+    });
     const mockKeytar = {
       setPassword: mock.fn(() => Promise.resolve()),
       getPassword: mock.fn((service: string, account: string) => {
@@ -42,7 +54,12 @@ describe('keychain - token storage', () => {
     const keychain = await createKeychainWithMock(mockKeytar);
     const result = await keychain.getToken();
 
-    assert.deepStrictEqual(result, { token: 'xyz789', expiresAt: 1711562400000 });
+    assert.deepStrictEqual(result, {
+      token: 'xyz789',
+      expiresAt: 1711562400000,
+      email: 'me@example.com',
+      refreshToken: 'rt-42',
+    });
   });
 
   test('getToken returns null when not stored', async () => {
@@ -58,7 +75,23 @@ describe('keychain - token storage', () => {
     assert.strictEqual(result, null);
   });
 
-  test('clearToken removes token', async () => {
+  test('getToken returns null when stored JSON lacks required fields', async () => {
+    // Legacy records (e.g. {token, expiresAt} only) should fail validation and
+    // be treated as missing, prompting re-login.
+    const legacyValue = JSON.stringify({ token: 'legacy', expiresAt: 123 });
+    const mockKeytar = {
+      setPassword: mock.fn(() => Promise.resolve()),
+      getPassword: mock.fn(() => Promise.resolve(legacyValue)),
+      deletePassword: mock.fn(() => Promise.resolve(true)),
+    };
+
+    const keychain = await createKeychainWithMock(mockKeytar);
+    const result = await keychain.getToken();
+
+    assert.strictEqual(result, null);
+  });
+
+  test('clearToken deletes the token entry', async () => {
     const mockKeytar = {
       setPassword: mock.fn(() => Promise.resolve()),
       getPassword: mock.fn(() => Promise.resolve(null)),
@@ -69,50 +102,15 @@ describe('keychain - token storage', () => {
     await keychain.clearToken();
 
     assert.strictEqual(mockKeytar.deletePassword.mock.calls.length, 1);
-  });
-});
-
-describe('keychain - credentials storage', () => {
-  test('storeCredentials saves email and password', async () => {
-    const mockKeytar = {
-      setPassword: mock.fn(() => Promise.resolve()),
-      getPassword: mock.fn(() => Promise.resolve(null)),
-      deletePassword: mock.fn(() => Promise.resolve(true)),
-    };
-
-    const keychain = await createKeychainWithMock(mockKeytar);
-    await keychain.storeCredentials({ email: 'test@example.com', password: 'secret123' });
-
-    assert.strictEqual(mockKeytar.setPassword.mock.callCount(), 1);
-    const args = mockKeytar.setPassword.mock.calls[0]?.arguments ?? [];
-    const [service, account, value] = args as unknown as [string, string, string];
+    const args = mockKeytar.deletePassword.mock.calls[0]?.arguments ?? [];
+    const [service, account] = args as unknown as [string, string];
     assert.strictEqual(service, 'copilot-money-auth');
-    assert.strictEqual(account, 'credentials');
-    const parsed = JSON.parse(value);
-    assert.strictEqual(parsed.email, 'test@example.com');
-    assert.strictEqual(parsed.password, 'secret123');
-  });
-
-  test('getCredentials returns stored credentials', async () => {
-    const storedValue = JSON.stringify({ email: 'test@example.com', password: 'secret123' });
-    const mockKeytar = {
-      setPassword: mock.fn(() => Promise.resolve()),
-      getPassword: mock.fn((service: string, account: string) => {
-        if (account === 'credentials') return Promise.resolve(storedValue);
-        return Promise.resolve(null);
-      }),
-      deletePassword: mock.fn(() => Promise.resolve(true)),
-    };
-
-    const keychain = await createKeychainWithMock(mockKeytar);
-    const result = await keychain.getCredentials();
-
-    assert.deepStrictEqual(result, { email: 'test@example.com', password: 'secret123' });
+    assert.strictEqual(account, 'token');
   });
 });
 
-describe('keychain - isTokenExpired', () => {
-  test('returns true when token expires within 10 minutes', async () => {
+describe('keychain - clearCredentials (migration path)', () => {
+  test('clearCredentials deletes BOTH token and legacy credentials entries', async () => {
     const mockKeytar = {
       setPassword: mock.fn(() => Promise.resolve()),
       getPassword: mock.fn(() => Promise.resolve(null)),
@@ -120,21 +118,38 @@ describe('keychain - isTokenExpired', () => {
     };
 
     const keychain = await createKeychainWithMock(mockKeytar);
-    const token = { token: 'test', expiresAt: Date.now() + 5 * 60 * 1000 }; // 5 min
+    await keychain.clearCredentials();
 
-    assert.strictEqual(keychain.isTokenExpired(token), true);
+    assert.strictEqual(mockKeytar.deletePassword.mock.calls.length, 2);
+    const accounts = mockKeytar.deletePassword.mock.calls.map((call) => {
+      const args = call.arguments as unknown as [string, string];
+      return args[1];
+    });
+    assert.ok(accounts.includes('token'), 'should delete token entry');
+    assert.ok(accounts.includes('credentials'), 'should delete legacy credentials entry');
   });
 
-  test('returns false when token has more than 10 minutes left', async () => {
+  test('clearCredentials swallows errors from either delete', async () => {
     const mockKeytar = {
       setPassword: mock.fn(() => Promise.resolve()),
       getPassword: mock.fn(() => Promise.resolve(null)),
-      deletePassword: mock.fn(() => Promise.resolve(true)),
+      deletePassword: mock.fn(() => Promise.reject(new Error('nope'))),
     };
 
     const keychain = await createKeychainWithMock(mockKeytar);
-    const token = { token: 'test', expiresAt: Date.now() + 30 * 60 * 1000 }; // 30 min
+    // Should not throw even though both deletes reject.
+    await keychain.clearCredentials();
+    assert.strictEqual(mockKeytar.deletePassword.mock.calls.length, 2);
+  });
+});
 
-    assert.strictEqual(keychain.isTokenExpired(token), false);
+describe('keychain - removed legacy exports', () => {
+  test('module no longer exports storeToken, storeCredentials, getCredentials, clearAll, isTokenExpired', async () => {
+    const mod = (await import('../../src/auth/keychain.js')) as unknown as Record<string, unknown>;
+    assert.strictEqual(mod.storeToken, undefined, 'storeToken should be removed');
+    assert.strictEqual(mod.storeCredentials, undefined, 'storeCredentials should be removed');
+    assert.strictEqual(mod.getCredentials, undefined, 'getCredentials should be removed');
+    assert.strictEqual(mod.clearAll, undefined, 'clearAll should be removed');
+    assert.strictEqual(mod.isTokenExpired, undefined, 'isTokenExpired should be removed');
   });
 });
