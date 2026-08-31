@@ -46,7 +46,7 @@ Before ANY commit, ALL must pass:
 - `auth/firebaseRest.ts` — Direct REST calls to `identitytoolkit.googleapis.com`: `sendOobCode` (emails a sign-in link) and `signInWithEmailLink` (exchanges the `oobCode` for an ID token). `parseOobCodeFromUrl` extracts the code from the pasted sign-in URL.
 
 ### LocalStore (read backend)
-- `localstore/path.ts` — Resolves `~/Library/Containers/com.copilot.production/Data/Library/Application Support/firestore/__FIRAPP_DEFAULT/copilot-production-22904/main`. Throws `LOCAL_CACHE_MISSING` if absent.
+- `localstore/path.ts` — Scans `~/Library/Containers/com.copilot.production/Data/Library/Application Support/firestore/__FIRAPP_DEFAULT` for the `copilot-production-22904` instance directory and returns its `main/` LevelDB dir. Firestore names that directory `<projectId>.<databaseId>` (currently `copilot-production-22904.copilot-production-firestore`); a bare `<projectId>` directory is also accepted. Throws `LOCAL_CACHE_MISSING` if no populated instance exists.
 - `localstore/leveldb.ts` — Read-only iterator over Copilot's Firestore LevelDB cache.
 - `localstore/keypath.ts` — Parses Firestore document key paths (collection/doc ID extraction).
 - `localstore/protobuf.ts` — Decodes Firestore `Document` protos into JSON.
