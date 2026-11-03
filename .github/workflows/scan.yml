@@ -5,25 +5,10 @@ on:
     - cron: '0 8 1 * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   scan:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
-      - name: Grype filesystem scan
-        uses: anchore/scan-action@29c20183986f95987e891537c2dbce95e63a2741 # main
-        with:
-          path: "."
-          fail-build: true
-          severity-cutoff: high
-          only-fixed: true
-
-      - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
-        if: always()
-        with:
-          sarif_file: results.sarif
+    uses: dakaneye/hookshot/.github/workflows/scan.yml@f83bc07bc65a01381441ae33f800b309637fd327 # v1
